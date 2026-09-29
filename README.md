@@ -16,9 +16,24 @@ App per tenere traccia delle ore lavorate sulle commesse, utilizzabile su **Wind
   - *Riepilogo commesse*: ore e importo totali per commessa;
   - *Riepilogo mensile*: ore per mese e per commessa.
 - Su Android il pulsante **Condividi Excel** invia il file direttamente a email, WhatsApp, Drive…
-- **Backup/ripristino** in JSON, per spostare i dati tra PC e telefono (con opzione *unisci*).
+- **Sincronizzazione** tra PC e telefono con accesso Google (Firebase): commesse, registrazioni e timer
+  si aggiornano in tempo reale; offline le modifiche restano in coda e partono al ritorno della rete.
+- **Backup/ripristino** in JSON (con opzione *unisci*).
 
-I dati restano salvati **solo sul dispositivo** (nessun server, nessun account).
+I dati sono sempre salvati anche sul dispositivo: l'app funziona pure senza account e senza connessione.
+
+## Configurare la sincronizzazione (Firebase, gratuito)
+
+1. <https://console.firebase.google.com> → **Crea un progetto**.
+2. **Authentication** → *Inizia* → *Metodo di accesso* → **Google** → Abilita → Salva.
+3. **Authentication → Impostazioni → Domini autorizzati** → aggiungi il dominio dell'app (es. `astroclaudio24.github.io`).
+4. **Firestore Database** → *Crea database* (posizione in Europa, modalità produzione) →
+   scheda **Regole** → incolla il contenuto di [`firestore.rules`](firestore.rules) → *Pubblica*.
+5. **Impostazioni progetto → Le tue app → Web (`</>`)** → registra l'app e copia l'oggetto `firebaseConfig`
+   in [`firebase-config.js`](firebase-config.js) al posto di `null`.
+
+I valori di `firebaseConfig` non sono segreti: i dati sono protetti dall'accesso Google e dalle regole,
+che permettono a ciascun utente di leggere e scrivere solo i propri dati (`utenti/{uid}/…`).
 
 ## Pubblicazione (una volta sola)
 
@@ -44,4 +59,6 @@ oppure avviare un piccolo server: `python -m http.server` e aprire `http://local
 |---|---|
 | `index.html`, `styles.css`, `app.js` | L'app |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Installazione e funzionamento offline |
+| `sync.js`, `firebase-config.js`, `firestore.rules` | Sincronizzazione tramite Firebase |
 | `vendor/xlsx.mini.min.js` | [SheetJS](https://sheetjs.com) 0.18.5 per creare i file Excel (licenza Apache 2.0) |
+| `vendor/firebase.js` | Firebase JS SDK 12.19.0 in un unico file (licenza Apache 2.0), rigenerabile con `tools/build-firebase.sh` |

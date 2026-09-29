@@ -37,12 +37,18 @@ function carica() {
 
 let state = carica();
 
-function salva() {
+function salvaLocale() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
     alert('Impossibile salvare i dati: ' + e.message);
   }
+}
+
+// Salva sul dispositivo e, se attiva, invia le modifiche al cloud (sync.js).
+function salva() {
+  salvaLocale();
+  if (window.OreSync) window.OreSync.push();
 }
 
 // Chiede al browser di non cancellare i dati in caso di poco spazio.
@@ -422,7 +428,8 @@ function vistaCommesse() {
 
 function vistaDati() {
   const arr = Number(state.impostazioni.arrotondamento) || 0;
-  return `<section class="card">
+  return `${cardSync()}
+  <section class="card">
     <h2>Impostazioni</h2>
     <label>Arrotondamento del timer
       <select id="impArrotonda">
@@ -432,9 +439,9 @@ function vistaDati() {
     </label>
   </section>
   <section class="card">
-    <h2>Backup e trasferimento</h2>
-    <p class="muted small">I dati sono salvati solo su questo dispositivo. Per spostarli tra PC e telefono
-      esporta un backup e importalo sull'altro dispositivo (puoi scegliere di unirli ai dati esistenti).</p>
+    <h2>Backup</h2>
+    <p class="muted small">Esporta periodicamente un backup: è un file che contiene tutte le commesse e le registrazioni.
+      Senza sincronizzazione serve anche per spostare i dati tra PC e telefono (puoi scegliere di unirli ai dati esistenti).</p>
     <div class="actions">
       <button data-act="backup">⬇ Esporta backup (.json)</button>
       <button data-act="import">⬆ Importa backup</button>
@@ -453,6 +460,81 @@ function vistaDati() {
     <button class="danger" data-act="reset">Cancella tutti i dati</button>
   </section>`;
 }
+
+/* ================== Sincronizzazione ================== */
+
+const TESTI_SYNC = {
+  'avvio': ['…', 'Avvio in corso'],
+  'disconnesso': ['☁ non connesso', 'Non connesso'],
+  'offline': ['☁ offline', 'Offline: le modifiche verranno inviate appena torna la connessione'],
+  'in-attesa': ['☁ invio…', 'Invio delle modifiche in corso'],
+  'sincronizzato': ['☁ ✓', 'Sincronizzato'],
+  'errore': ['☁ errore', 'Errore']
+};
+
+function infoSync() {
+  return window.OreSync ? window.OreSync.info() : { configurata: !!window.FIREBASE_CONFIG, stato: 'avvio' };
+}
+
+function cardSync() {
+  const i = infoSync();
+  if (!i.configurata) {
+    return `<section class="card">
+      <h2>Sincronizzazione</h2>
+      <p class="muted small">Sincronizzazione non ancora configurata: i dati sono salvati solo su questo dispositivo.</p>
+    </section>`;
+  }
+  const testo = (TESTI_SYNC[i.stato] || TESTI_SYNC.avvio)[1];
+  if (i.email) {
+    return `<section class="card">
+      <h2>Sincronizzazione</h2>
+      <p class="small">Connesso come <b>${esc(i.email)}</b></p>
+      <p class="small">Stato: <b>${esc(testo)}</b></p>
+      ${i.errore ? `<p class="small" style="color:var(--danger)">${esc(i.errore)}</p>` : ''}
+      <p class="muted small">Accedi con lo stesso account Google su PC e telefono: commesse, registrazioni e timer
+        si aggiornano automaticamente su tutti i dispositivi.</p>
+      <button data-act="sync-esci">Esci</button>
+    </section>`;
+  }
+  return `<section class="card">
+    <h2>Sincronizzazione</h2>
+    <p class="small">Accedi con il tuo account Google per avere gli stessi dati su PC e telefono.
+      I dati già presenti su questo dispositivo verranno uniti a quelli nel cloud.</p>
+    ${i.errore ? `<p class="small" style="color:var(--danger)">${esc(i.errore)}</p>` : ''}
+    <button class="primary" data-act="sync-accedi"${i.stato === 'avvio' ? ' disabled' : ''}>Accedi con Google</button>
+  </section>`;
+}
+
+function aggiornaBadge() {
+  const b = $('#syncBadge');
+  const i = infoSync();
+  b.hidden = !i.configurata;
+  const [breve, lungo] = TESTI_SYNC[i.stato] || TESTI_SYNC.avvio;
+  b.textContent = breve;
+  b.title = lungo;
+  b.className = 'sync-badge ' + i.stato;
+}
+
+// Interfaccia usata da sync.js
+window.OreApp = {
+  get state() { return state; },
+  applicaRemoto(parte, valore, cambiato) {
+    if (parte === 'meta') {
+      state.timer = valore.timer && valore.timer.commessaId ? valore.timer : null;
+      state.impostazioni = Object.assign({}, statoVuoto().impostazioni, valore.impostazioni || {});
+    } else {
+      state[parte] = valore;
+    }
+    salvaLocale();
+    if (cambiato) render();
+  },
+  aggiornaSync() {
+    aggiornaBadge();
+    if (vista === 'dati') render();
+  }
+};
+
+$('#syncBadge').addEventListener('click', () => $('#tabs button[data-view="dati"]').click());
 
 /* ================== Dialog registrazione ================== */
 
@@ -513,11 +595,9 @@ formReg.addEventListener('submit', e => {
     ore,
     note: formReg.note.value.trim()
   };
-  if (regInModifica) {
-    Object.assign(state.registrazioni.find(r => r.id === regInModifica), dati);
-  } else {
-    state.registrazioni.push(Object.assign({ id: uid() }, dati));
-  }
+  const esistente = regInModifica && state.registrazioni.find(r => r.id === regInModifica);
+  if (esistente) Object.assign(esistente, dati);
+  else state.registrazioni.push(Object.assign({ id: regInModifica || uid() }, dati));
   if (regDaTimer) state.timer = null;
   state.impostazioni.ultimaCommessa = dati.commessaId;
   salva();
@@ -575,8 +655,9 @@ formCom.addEventListener('submit', e => {
     archiviata: formCom.archiviata.checked
   };
   if (!dati.nome) return;
-  if (comInModifica) Object.assign(commessa(comInModifica), dati);
-  else state.commesse.push(Object.assign({ id: uid() }, dati));
+  const esistente = comInModifica && commessa(comInModifica);
+  if (esistente) Object.assign(esistente, dati);
+  else state.commesse.push(Object.assign({ id: comInModifica || uid() }, dati));
   salva();
   dlgCom.close();
   render();
@@ -796,9 +877,16 @@ document.addEventListener('click', e => {
       case 'export': esportaExcel(); break;
       case 'share': condividiExcel(); break;
       case 'backup': esportaBackup(); break;
+      case 'sync-accedi': window.OreSync && window.OreSync.accedi(); break;
+      case 'sync-esci':
+        if (confirm('Uscire dall\'account? I dati restano su questo dispositivo ma non verranno più sincronizzati.')) {
+          window.OreSync.esci();
+        }
+        break;
       case 'import': $('#fileImport').click(); break;
       case 'reset':
-        if (confirm('Cancellare TUTTE le commesse e le registrazioni? Operazione irreversibile.') &&
+        if (confirm('Cancellare TUTTE le commesse e le registrazioni? Operazione irreversibile.' +
+              (infoSync().email ? '\nI dati verranno cancellati anche dal cloud e dagli altri dispositivi.' : '')) &&
             confirm('Sei proprio sicuro? Ti consigliamo di esportare prima un backup.')) {
           state = statoVuoto(); salva(); render();
         }
@@ -841,6 +929,7 @@ window.addEventListener('storage', e => {
 });
 
 render();
+aggiornaBadge();
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});

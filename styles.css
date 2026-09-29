@@ -45,6 +45,16 @@ body { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
   padding-top: calc(10px + env(safe-area-inset-top));
 }
 .topbar h1 { margin: 0; font-size: 1.15rem; }
+.brand { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+.sync-badge {
+  font-size: .8rem;
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--bg);
+}
+.sync-badge.sincronizzato { color: var(--ok); border-color: var(--ok); }
+.sync-badge.errore { color: var(--danger); border-color: var(--danger); }
 
 .tabs {
   position: fixed;

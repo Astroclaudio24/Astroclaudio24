@@ -13,7 +13,10 @@
 </head>
 <body>
   <header class="topbar">
-    <h1>Ore Commesse</h1>
+    <div class="brand">
+      <h1>Ore Commesse</h1>
+      <button id="syncBadge" class="sync-badge" hidden></button>
+    </div>
     <nav class="tabs" id="tabs">
       <button data-view="timer" class="active">⏱<span>Timer</span></button>
       <button data-view="registro">📋<span>Registro</span></button>
@@ -84,6 +87,8 @@
   <input type="file" id="fileImport" accept="application/json,.json" hidden>
 
   <script src="vendor/xlsx.mini.min.js"></script>
+  <script src="firebase-config.js"></script>
   <script src="app.js"></script>
+  <script type="module" src="sync.js"></script>
 </body>
 </html>
