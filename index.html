@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Ore Commesse</title>
+  <meta name="description" content="Tieni traccia delle ore lavorate sulle tue commesse ed esportale in Excel.">
+  <meta name="theme-color" content="#1f6feb">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Ore Commesse</h1>
+    <nav class="tabs" id="tabs">
+      <button data-view="timer" class="active">⏱<span>Timer</span></button>
+      <button data-view="registro">📋<span>Registro</span></button>
+      <button data-view="commesse">📁<span>Commesse</span></button>
+      <button data-view="dati">⚙<span>Dati</span></button>
+    </nav>
+  </header>
+
+  <main id="app"></main>
+
+  <!-- Dialog registrazione -->
+  <dialog id="dlgReg">
+    <form method="dialog" id="formReg">
+      <h2 id="dlgRegTitle">Registrazione</h2>
+      <label>Commessa
+        <select name="commessaId" required></select>
+      </label>
+      <label>Data
+        <input type="date" name="data" required>
+      </label>
+      <div class="row">
+        <label>Inizio <input type="time" name="inizio"></label>
+        <label>Fine <input type="time" name="fine"></label>
+        <label>Pausa (min) <input type="number" name="pausa" min="0" step="5" inputmode="numeric"></label>
+      </div>
+      <label>Ore
+        <input type="number" name="ore" min="0" step="0.01" inputmode="decimal" required>
+      </label>
+      <label>Note / attività
+        <textarea name="note" rows="2"></textarea>
+      </label>
+      <div class="actions">
+        <button type="button" class="danger" id="btnRegDelete">Elimina</button>
+        <span class="spacer"></span>
+        <button type="button" value="cancel" id="btnRegCancel">Annulla</button>
+        <button type="submit" class="primary">Salva</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Dialog commessa -->
+  <dialog id="dlgCom">
+    <form method="dialog" id="formCom">
+      <h2 id="dlgComTitle">Commessa</h2>
+      <div class="row">
+        <label>Codice <input name="codice" maxlength="40" placeholder="es. C-2026-014"></label>
+        <label>Colore <input type="color" name="colore"></label>
+      </div>
+      <label>Nome / descrizione
+        <input name="nome" required maxlength="120">
+      </label>
+      <label>Cliente
+        <input name="cliente" maxlength="120">
+      </label>
+      <label>Tariffa oraria (€/h, facoltativa)
+        <input type="number" name="tariffa" min="0" step="0.01" inputmode="decimal">
+      </label>
+      <label class="check"><input type="checkbox" name="archiviata"> Archiviata (nascosta da timer e nuove registrazioni)</label>
+      <div class="actions">
+        <button type="button" class="danger" id="btnComDelete">Elimina</button>
+        <span class="spacer"></span>
+        <button type="button" id="btnComCancel">Annulla</button>
+        <button type="submit" class="primary">Salva</button>
+      </div>
+    </form>
+  </dialog>
+
+  <input type="file" id="fileImport" accept="application/json,.json" hidden>
+
+  <script src="vendor/xlsx.mini.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
