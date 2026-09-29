@@ -22,7 +22,7 @@ I dati restano salvati **solo sul dispositivo** (nessun server, nessun account).
 
 ## Pubblicazione (una volta sola)
 
-1. Porta questi file sul branch `main` del repository.
+1. Il workflow parte a ogni push sul branch `main` (o sul branch di sviluppo attuale).
 2. Su GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 3. Il workflow `.github/workflows/pages.yml` pubblica l'app su
    `https://<utente>.github.io/<repository>/`.

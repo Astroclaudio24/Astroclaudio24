@@ -2,7 +2,7 @@ name: Pubblica su GitHub Pages
 
 on:
   push:
-    branches: [main]
+    branches: [main, claude/time-tracking-app-windows-android-i5jbkq]
   workflow_dispatch:
 
 permissions:
