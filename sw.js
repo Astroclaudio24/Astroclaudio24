@@ -1,6 +1,6 @@
 // Service worker: rende l'app utilizzabile offline.
 // Aumenta VERSIONE ad ogni rilascio per aggiornare la cache.
-const VERSIONE = 'ore-commesse-v2';
+const VERSIONE = 'ore-commesse-v3';
 const FILE = [
   './',
   'index.html',
@@ -40,4 +40,20 @@ self.addEventListener('fetch', e => {
       })
       .catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match('index.html')))
   );
+});
+
+// Pulsanti della notifica «Stai ancora lavorando?».
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const azione = e.action || '';
+  e.waitUntil((async () => {
+    const finestre = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const app = finestre.find(c => new URL(c.url).pathname.startsWith(new URL(self.registration.scope).pathname));
+    if (app) {
+      await app.focus().catch(() => {});
+      if (azione) app.postMessage({ tipo: 'promemoria', azione });
+    } else {
+      await self.clients.openWindow('./' + (azione ? '?promemoria=' + azione : ''));
+    }
+  })());
 });

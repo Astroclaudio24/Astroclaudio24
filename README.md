@@ -8,6 +8,9 @@ App per tenere traccia delle ore lavorate sulle commesse, utilizzabile su **Wind
 - **Commesse**: codice, nome, cliente, tariffa oraria facoltativa, colore; si possono archiviare.
 - **Timer**: avvia/ferma il cronometro su una commessa. Il timer continua anche se chiudi l'app;
   quando lo fermi puoi controllare e correggere il tempo prima di salvarlo. Arrotondamento opzionale (5/10/15/30/60 min).
+- **Promemoria** «Stai ancora lavorando su…?» ogni 30 min / 1–8 ore (predefinito 2 ore) mentre il timer è attivo:
+  finestra nell'app e notifica di sistema con i pulsanti *Sì, continuo* / *No, fermalo*. Se rispondi «No» più tardi,
+  come ora di fine viene proposta quella del promemoria, così non conti ore non lavorate.
 - **Inserimento manuale**: data, ora inizio/fine, pausa (le ore si calcolano da sole) oppure ore dirette, note.
 - **Registro**: filtri per periodo (oggi, settimana, mese, mese scorso, anno, personalizzato) e per commessa,
   totali di ore e importo.

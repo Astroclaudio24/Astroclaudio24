@@ -11,7 +11,7 @@ function statoVuoto() {
     commesse: [],
     registrazioni: [],
     timer: null,
-    impostazioni: { arrotondamento: 0 }
+    impostazioni: { arrotondamento: 0, promemoria: 2 }
   };
 }
 
@@ -301,18 +301,21 @@ setInterval(aggiornaOrologio, 1000);
 function avviaTimer() {
   const id = $('#timerCommessa').value;
   if (!id) return;
-  state.timer = { commessaId: id, start: new Date().toISOString(), note: $('#timerNote').value.trim() };
+  const ora = new Date().toISOString();
+  state.timer = { commessaId: id, start: ora, confermato: ora, note: $('#timerNote').value.trim() };
   state.impostazioni.ultimaCommessa = id;
   salva();
   render();
+  chiediPermessoNotifiche();
 }
 
-function fermaTimer() {
+// fineStimata: ora di fine proposta (di default adesso).
+function fermaTimer(fineStimata) {
   const t = state.timer;
   if (!t) return;
   const note = $('#timerNote') ? $('#timerNote').value.trim() : t.note;
   const inizio = new Date(t.start);
-  const fine = new Date();
+  const fine = fineStimata || new Date();
   let min = (fine - inizio) / 60000;
   const step = Number(state.impostazioni.arrotondamento) || 0;
   if (step > 0) min = Math.max(step, Math.round(min / step) * step);
@@ -325,6 +328,109 @@ function fermaTimer() {
     ore: round2(min / 60),
     note
   }, true);
+}
+
+/* ================== Promemoria durante il timer ================== */
+
+// Ogni N ore (impostazioni.promemoria) chiede se si sta ancora lavorando
+// sulla commessa: finestra nell'app e, se permesso, notifica di sistema.
+
+const dlgProm = $('#dlgPromemoria');
+let ultimaNotifica = '';
+
+function intervalloPromemoria() {
+  return (Number(state.impostazioni.promemoria) || 0) * 3600000;
+}
+
+// Momento in cui scatta il prossimo promemoria (ms), o null.
+function scadenzaPromemoria() {
+  const t = state.timer;
+  const ms = intervalloPromemoria();
+  if (!t || !ms) return null;
+  return new Date(t.confermato || t.start).getTime() + ms;
+}
+
+function chiediPermessoNotifiche() {
+  if (!intervalloPromemoria() || !('Notification' in window) || Notification.permission !== 'default') return;
+  Notification.requestPermission().then(() => { if (vista === 'dati') render(); }).catch(() => {});
+}
+
+function inviaNotifica(testo) {
+  if (!('Notification' in window) || Notification.permission !== 'granted' || !navigator.serviceWorker) return;
+  navigator.serviceWorker.ready.then(reg => reg.showNotification('Ore Commesse', {
+    body: testo,
+    tag: 'promemoria-timer',
+    renotify: true,
+    requireInteraction: true,
+    icon: 'icons/icon-192.png',
+    badge: 'icons/icon-192.png',
+    actions: [{ action: 'si', title: 'Sì, continuo' }, { action: 'no', title: 'No, fermalo' }]
+  })).catch(() => {});
+}
+
+function chiudiNotifiche() {
+  if (!navigator.serviceWorker) return;
+  navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(reg =>
+    reg.getNotifications({ tag: 'promemoria-timer' }).then(ns => ns.forEach(n => n.close()))
+  )).catch(() => {});
+}
+
+function controllaPromemoria() {
+  const scad = scadenzaPromemoria();
+  const dovuto = scad != null && Date.now() >= scad;
+  if (!dovuto) {
+    if (dlgProm.open) dlgProm.close();
+    return;
+  }
+  const c = commessa(state.timer.commessaId);
+  const testo = `Stai ancora lavorando su «${etichetta(c)}»?`;
+  const chiave = state.timer.start + '|' + (state.timer.confermato || '');
+  if (ultimaNotifica !== chiave) {
+    ultimaNotifica = chiave;
+    if (document.visibilityState !== 'visible') inviaNotifica(testo + ` Timer avviato alle ${hhmm(new Date(state.timer.start))}.`);
+  }
+  if (document.visibilityState === 'visible' && !dlgProm.open && !dlgReg.open) {
+    $('#promTesto').textContent = testo;
+    $('#promDettagli').textContent =
+      `Timer avviato alle ${hhmm(new Date(state.timer.start))} del ${fmtData(isoData(new Date(state.timer.start)))}` +
+      (state.timer.confermato && state.timer.confermato !== state.timer.start
+        ? ` · ultima conferma alle ${hhmm(new Date(state.timer.confermato))}.` : '.');
+    dlgProm.showModal();
+  }
+}
+
+function rispostaPromemoria(azione) {
+  if (dlgProm.open) dlgProm.close();
+  chiudiNotifiche();
+  if (!state.timer) return;
+  if (azione === 'si') {
+    state.timer.confermato = new Date().toISOString();
+    salva();
+    toast('Ok, il timer continua');
+  } else if (azione === 'no') {
+    // Se non hai risposto subito, propone come fine l'ora del promemoria.
+    const scad = scadenzaPromemoria();
+    const fine = new Date(Math.min(Date.now(), scad || Date.now()));
+    vista = 'timer';
+    document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('active', x.dataset.view === 'timer'));
+    render();
+    fermaTimer(fine);
+    if (fine < Date.now() - 60000) toast('Controlla l\'ora di fine proposta');
+  }
+}
+
+$('#btnPromSi').addEventListener('click', () => rispostaPromemoria('si'));
+$('#btnPromNo').addEventListener('click', () => rispostaPromemoria('no'));
+dlgProm.addEventListener('cancel', e => e.preventDefault());
+
+setInterval(controllaPromemoria, 20000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') controllaPromemoria(); });
+
+// Risposte dai pulsanti della notifica (vedi sw.js).
+if (navigator.serviceWorker) {
+  navigator.serviceWorker.addEventListener('message', e => {
+    if (e.data && e.data.tipo === 'promemoria') rispostaPromemoria(e.data.azione);
+  });
 }
 
 /* ================== Vista: Registro ================== */
@@ -426,8 +532,17 @@ function vistaCommesse() {
 
 /* ================== Vista: Dati ================== */
 
+function statoNotifiche() {
+  if (!intervalloPromemoria()) return '';
+  if (!('Notification' in window)) return '<p class="muted small">Questo browser non supporta le notifiche: il promemoria compare quando apri l\'app.</p>';
+  if (Notification.permission === 'granted') return '<p class="muted small">Notifiche attive. Se l\'app è chiusa da tempo, la domanda compare alla prossima apertura.</p>';
+  if (Notification.permission === 'denied') return '<p class="muted small">Notifiche bloccate: il promemoria compare solo ad app aperta. Puoi riattivarle dalle impostazioni del browser/sito.</p>';
+  return '<button data-act="notifiche">🔔 Attiva le notifiche</button>';
+}
+
 function vistaDati() {
   const arr = Number(state.impostazioni.arrotondamento) || 0;
+  const prom = Number(state.impostazioni.promemoria) || 0;
   return `${cardSync()}
   <section class="card">
     <h2>Impostazioni</h2>
@@ -437,6 +552,13 @@ function vistaDati() {
           .map(([v, l]) => `<option value="${v}"${v === arr ? ' selected' : ''}>${l}</option>`).join('')}
       </select>
     </label>
+    <label>Promemoria «Stai ancora lavorando?» con il timer attivo
+      <select id="impPromemoria">
+        ${[[0, 'Disattivato'], [0.5, 'Ogni 30 minuti'], [1, 'Ogni ora'], [2, 'Ogni 2 ore'], [3, 'Ogni 3 ore'], [4, 'Ogni 4 ore'], [6, 'Ogni 6 ore'], [8, 'Ogni 8 ore']]
+          .map(([v, l]) => `<option value="${v}"${v === prom ? ' selected' : ''}>${l}</option>`).join('')}
+      </select>
+    </label>
+    ${statoNotifiche()}
   </section>
   <section class="card">
     <h2>Backup</h2>
@@ -526,7 +648,7 @@ window.OreApp = {
       state[parte] = valore;
     }
     salvaLocale();
-    if (cambiato) render();
+    if (cambiato) { render(); controllaPromemoria(); }
   },
   aggiornaSync() {
     aggiornaBadge();
@@ -877,6 +999,7 @@ document.addEventListener('click', e => {
       case 'export': esportaExcel(); break;
       case 'share': condividiExcel(); break;
       case 'backup': esportaBackup(); break;
+      case 'notifiche': Notification.requestPermission().then(() => render()); break;
       case 'sync-accedi': window.OreSync && window.OreSync.accedi(); break;
       case 'sync-esci':
         if (confirm('Uscire dall\'account? I dati restano su questo dispositivo ma non verranno più sincronizzati.')) {
@@ -913,6 +1036,12 @@ document.addEventListener('change', e => {
     state.impostazioni.arrotondamento = Number(t.value);
     salva();
     toast('Impostazione salvata');
+  } else if (t.id === 'impPromemoria') {
+    state.impostazioni.promemoria = Number(t.value);
+    salva();
+    chiediPermessoNotifiche();
+    render();
+    toast('Impostazione salvata');
   }
 });
 
@@ -930,6 +1059,14 @@ window.addEventListener('storage', e => {
 
 render();
 aggiornaBadge();
+controllaPromemoria();
+
+// Apertura dell'app da un pulsante della notifica (app chiusa).
+const azioneUrl = new URLSearchParams(location.search).get('promemoria');
+if (azioneUrl) {
+  history.replaceState(null, '', location.pathname);
+  rispostaPromemoria(azioneUrl);
+}
 
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
