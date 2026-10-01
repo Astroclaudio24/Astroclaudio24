@@ -25,6 +25,22 @@ App per tenere traccia delle ore lavorate sulle commesse, utilizzabile su **Wind
 
 I dati sono sempre salvati anche sul dispositivo: l'app funziona pure senza account e senza connessione.
 
+## App Android (APK)
+
+Oltre all'app web c'è un'app Android vera e propria (cartella [`android-app/`](android-app), basata su
+[Capacitor](https://capacitorjs.com)) con lo stesso codice. In più rispetto all'app nel browser:
+
+- i **promemoria** del timer sono programmati nel sistema e arrivano **anche con l'app chiusa** e il telefono in standby;
+- Excel e backup si salvano/inviano con il menu **Condividi** di Android.
+
+L'APK viene compilato da GitHub Actions a ogni modifica e pubblicato insieme al sito:
+`https://<utente>.github.io/<repository>/ore-commesse.apk` (link anche in *Dati → Installa l'app*).
+È firmato con la chiave in `android-app/firma/` (inclusa nel repository, così ogni versione si installa sopra la
+precedente); per una firma privata impostare le variabili `ORE_KEYSTORE` e `ORE_KEYSTORE_PASSWORD`.
+Nell'app Android la sincronizzazione Google non è disponibile: i dati si spostano con il backup.
+
+Compilazione in locale (serve Android SDK + JDK 21): `cd android-app && npm ci && npm run sync && cd android && ./gradlew assembleRelease`.
+
 ## Configurare la sincronizzazione (Firebase, gratuito)
 
 1. <https://console.firebase.google.com> → **Crea un progetto**.

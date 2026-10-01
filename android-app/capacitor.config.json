@@ -1,0 +1,14 @@
+{
+  "appId": "io.github.astroclaudio24.orecommesse",
+  "appName": "Ore Commesse",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_ore",
+      "iconColor": "#1f6feb"
+    }
+  }
+}

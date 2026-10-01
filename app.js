@@ -37,12 +37,17 @@ function carica() {
 
 let state = carica();
 
+// true quando l'app gira come app Android (Capacitor), non nel browser.
+const NATIVO = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+const Plugin = NATIVO ? window.Capacitor.Plugins : {};
+
 function salvaLocale() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (e) {
     alert('Impossibile salvare i dati: ' + e.message);
   }
+  if (NATIVO) aggiornaPromemoriaNativi();
 }
 
 // Salva sul dispositivo e, se attiva, invia le modifiche al cloud (sync.js).
@@ -351,11 +356,13 @@ function scadenzaPromemoria() {
 }
 
 function chiediPermessoNotifiche() {
+  if (NATIVO) { if (intervalloPromemoria()) chiediPermessiNativi(); return; }
   if (!intervalloPromemoria() || !('Notification' in window) || Notification.permission !== 'default') return;
   Notification.requestPermission().then(() => { if (vista === 'dati') render(); }).catch(() => {});
 }
 
 function inviaNotifica(testo) {
+  if (NATIVO) return; // nell'app Android le notifiche sono già programmate dal sistema
   if (!('Notification' in window) || Notification.permission !== 'granted' || !navigator.serviceWorker) return;
   navigator.serviceWorker.ready.then(reg => reg.showNotification('Ore Commesse', {
     body: testo,
@@ -369,10 +376,86 @@ function inviaNotifica(testo) {
 }
 
 function chiudiNotifiche() {
+  if (NATIVO) { Plugin.LocalNotifications.removeAllDeliveredNotifications().catch(() => {}); return; }
   if (!navigator.serviceWorker) return;
   navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(reg =>
     reg.getNotifications({ tag: 'promemoria-timer' }).then(ns => ns.forEach(n => n.close()))
   )).catch(() => {});
+}
+
+/* ---- App Android: notifiche programmate nel sistema (arrivano anche ad app chiusa) ---- */
+
+const ID_PROMEMORIA = 1000;   // id 1000..1011
+const N_PROMEMORIA = 12;      // se non rispondi, il promemoria si ripete fino a 12 volte
+let chiavePromemoria = null;
+let codaPromemoria = Promise.resolve();
+const permessiNativi = { notifiche: '', esatte: '' };
+
+function aggiornaPromemoriaNativi() {
+  const t = state.timer;
+  const chiave = t && intervalloPromemoria()
+    ? [t.start, t.confermato, t.commessaId, state.impostazioni.promemoria].join('|') : '';
+  if (chiave === chiavePromemoria) return;
+  chiavePromemoria = chiave;
+  codaPromemoria = codaPromemoria.then(programmaPromemoriaNativi).catch(e => console.error(e));
+}
+
+async function programmaPromemoriaNativi() {
+  const LN = Plugin.LocalNotifications;
+  const attese = await LN.getPending();
+  const nostre = attese.notifications.filter(n => n.id >= ID_PROMEMORIA && n.id < ID_PROMEMORIA + N_PROMEMORIA);
+  if (nostre.length) await LN.cancel({ notifications: nostre.map(n => ({ id: n.id })) });
+  const scad = scadenzaPromemoria();
+  if (scad == null) return;
+  const passo = intervalloPromemoria();
+  const c = commessa(state.timer.commessaId);
+  const avvio = hhmm(new Date(state.timer.start));
+  const notifiche = [];
+  for (let k = 0; k < N_PROMEMORIA; k++) {
+    const quando = scad + k * passo;
+    if (quando <= Date.now()) continue;
+    notifiche.push({
+      id: ID_PROMEMORIA + k,
+      title: 'Stai ancora lavorando?',
+      body: `${etichetta(c)} · timer avviato alle ${avvio}`,
+      schedule: { at: new Date(quando), allowWhileIdle: true },
+      actionTypeId: 'PROMEMORIA',
+      smallIcon: 'ic_stat_ore',
+      iconColor: '#1f6feb',
+      extra: { start: state.timer.start }
+    });
+  }
+  if (notifiche.length) await LN.schedule({ notifications: notifiche });
+}
+
+async function leggiPermessiNativi() {
+  const LN = Plugin.LocalNotifications;
+  try {
+    permessiNativi.notifiche = (await LN.checkPermissions()).display;
+    permessiNativi.esatte = (await LN.checkExactNotificationSetting()).exact_alarm;
+  } catch (e) { /* versioni di Android senza questa impostazione */ }
+  if (vista === 'dati') render();
+}
+
+async function chiediPermessiNativi() {
+  try { await Plugin.LocalNotifications.requestPermissions(); } catch (e) { /* ignora */ }
+  await leggiPermessiNativi();
+}
+
+if (NATIVO) {
+  const LN = Plugin.LocalNotifications;
+  LN.registerActionTypes({ types: [{ id: 'PROMEMORIA', actions: [
+    { id: 'si', title: 'Sì, continuo' },
+    { id: 'no', title: 'No, fermalo' }
+  ] }] }).catch(e => console.error(e));
+  LN.addListener('localNotificationActionPerformed', ev => {
+    const n = ev.notification || {};
+    if (!state.timer || (n.extra && n.extra.start && n.extra.start !== state.timer.start)) return;
+    if (ev.actionId === 'si' || ev.actionId === 'no') rispostaPromemoria(ev.actionId);
+    else controllaPromemoria(); // tocco sulla notifica: apre l'app con la domanda
+  });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') leggiPermessiNativi(); });
+  leggiPermessiNativi();
 }
 
 function controllaPromemoria() {
@@ -534,6 +617,15 @@ function vistaCommesse() {
 
 function statoNotifiche() {
   if (!intervalloPromemoria()) return '';
+  if (NATIVO) {
+    if (permessiNativi.notifiche && permessiNativi.notifiche !== 'granted') {
+      return '<button data-act="notifiche">🔔 Attiva le notifiche</button>';
+    }
+    return '<p class="muted small">Le notifiche arrivano anche con l\'app chiusa e il telefono in standby.</p>' +
+      (permessiNativi.esatte === 'denied'
+        ? '<p class="muted small">Per farle arrivare all\'ora esatta (e non con qualche minuto di ritardo) consenti «Sveglie e promemoria».</p><button data-act="notifiche-esatte">⏰ Consenti sveglie e promemoria</button>'
+        : '');
+  }
   if (!('Notification' in window)) return '<p class="muted small">Questo browser non supporta le notifiche: il promemoria compare quando apri l\'app.</p>';
   if (Notification.permission === 'granted') return '<p class="muted small">Notifiche attive. Se l\'app è chiusa da tempo, la domanda compare alla prossima apertura.</p>';
   if (Notification.permission === 'denied') return '<p class="muted small">Notifiche bloccate: il promemoria compare solo ad app aperta. Puoi riattivarle dalle impostazioni del browser/sito.</p>';
@@ -570,13 +662,16 @@ function vistaDati() {
     </div>
     <p class="muted small">${state.commesse.length} commesse · ${state.registrazioni.length} registrazioni</p>
   </section>
-  <section class="card">
+  ${NATIVO ? '' : `<section class="card">
     <h2>Installa l'app</h2>
+    <p class="small"><b>Android (consigliato):</b> scarica l'app Android: i promemoria arrivano anche con l'app chiusa.</p>
+    <p><a class="btn primary" href="ore-commesse.apk" download>📱 Scarica l'app Android (APK)</a></p>
+    <p class="small muted">Apri il file scaricato e conferma l'installazione (la prima volta Android chiede di consentire
+      l'installazione da questa origine). I dati non passano da soli dall'app nel browser: usa Esporta/Importa backup.</p>
     <p class="small"><b>Windows:</b> apri questa pagina con Edge o Chrome e clicca l'icona «Installa app» nella barra degli indirizzi
       (oppure menu ⋯ → App → Installa questo sito come app).</p>
-    <p class="small"><b>Android:</b> apri la pagina con Chrome, menu ⋮ → «Installa app» / «Aggiungi a schermata Home».</p>
     <p class="small muted">Dopo l'installazione l'app funziona anche senza connessione.</p>
-  </section>
+  </section>`}
   <section class="card">
     <h2>Zona pericolosa</h2>
     <button class="danger" data-act="reset">Cancella tutti i dati</button>
@@ -600,6 +695,13 @@ function infoSync() {
 
 function cardSync() {
   const i = infoSync();
+  if (NATIVO) {
+    return `<section class="card">
+      <h2>Sincronizzazione</h2>
+      <p class="muted small">Nell'app Android i dati sono salvati su questo telefono. Per spostarli su un altro dispositivo
+        usa Esporta backup e poi Importa backup sull'altro.</p>
+    </section>`;
+  }
   if (!i.configurata) {
     return `<section class="card">
       <h2>Sincronizzazione</h2>
@@ -909,10 +1011,26 @@ function controllaXLSX() {
   return false;
 }
 
+// App Android: salva il file e apre il menu Condividi (Drive, email, WhatsApp, File…).
+async function condividiFileNativo(nome, dati, codifica) {
+  try {
+    const opz = { path: nome, data: dati, directory: 'CACHE' };
+    if (codifica) opz.encoding = codifica;
+    const f = await Plugin.Filesystem.writeFile(opz);
+    await Plugin.Share.share({ title: nome, files: [f.uri], dialogTitle: 'Salva o invia ' + nome });
+  } catch (e) {
+    if (!/cancel/i.test(e.message || '')) alert('Esportazione non riuscita: ' + (e.message || e));
+  }
+}
+
 function esportaExcel() {
   if (!controllaXLSX()) return;
   const list = registrazioniFiltrate();
   if (!list.length) return;
+  if (NATIVO) {
+    condividiFileNativo(nomeFileExcel(), XLSX.write(creaWorkbook(list), { type: 'base64', bookType: 'xlsx', compression: true }));
+    return;
+  }
   XLSX.writeFile(creaWorkbook(list), nomeFileExcel(), { compression: true });
 }
 
@@ -950,6 +1068,10 @@ function scaricaBlob(blob, nome) {
 
 function esportaBackup() {
   const dati = Object.assign({}, state, { esportatoIl: new Date().toISOString() });
+  if (NATIVO) {
+    condividiFileNativo('backup-ore-commesse_' + oggiISO() + '.json', JSON.stringify(dati, null, 2), 'utf8');
+    return;
+  }
   scaricaBlob(new Blob([JSON.stringify(dati, null, 2)], { type: 'application/json' }),
     'backup-ore-commesse_' + oggiISO() + '.json');
 }
@@ -999,7 +1121,11 @@ document.addEventListener('click', e => {
       case 'export': esportaExcel(); break;
       case 'share': condividiExcel(); break;
       case 'backup': esportaBackup(); break;
-      case 'notifiche': Notification.requestPermission().then(() => render()); break;
+      case 'notifiche':
+        if (NATIVO) chiediPermessiNativi();
+        else Notification.requestPermission().then(() => render());
+        break;
+      case 'notifiche-esatte': Plugin.LocalNotifications.changeExactNotificationSetting().catch(() => {}); break;
       case 'sync-accedi': window.OreSync && window.OreSync.accedi(); break;
       case 'sync-esci':
         if (confirm('Uscire dall\'account? I dati restano su questo dispositivo ma non verranno più sincronizzati.')) {
@@ -1060,6 +1186,7 @@ window.addEventListener('storage', e => {
 render();
 aggiornaBadge();
 controllaPromemoria();
+if (NATIVO) aggiornaPromemoriaNativi();
 
 // Apertura dell'app da un pulsante della notifica (app chiusa).
 const azioneUrl = new URLSearchParams(location.search).get('promemoria');
@@ -1068,6 +1195,6 @@ if (azioneUrl) {
   rispostaPromemoria(azioneUrl);
 }
 
-if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+if (!NATIVO && 'serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
