@@ -11,7 +11,7 @@ function statoVuoto() {
     commesse: [],
     registrazioni: [],
     timer: null,
-    impostazioni: { arrotondamento: 0, promemoria: 2, revitAttivo: false, revitFerma: true }
+    impostazioni: { arrotondamento: 0, promemoria: 2, revitAttivo: false, revitFerma: true, inattivitaMin: 15 }
   };
 }
 
@@ -226,7 +226,10 @@ function rigaRegistrazione(r, mostraData) {
 }
 
 function vistaTimer() {
-  let html = '';
+  let html = avvisoTimer ? `<section class="card avviso">
+      <p class="small" style="margin:0 0 8px">⏸ ${esc(avvisoTimer)}</p>
+      <button data-act="chiudi-avviso">OK</button>
+    </section>` : '';
   const t = state.timer;
   if (t) {
     const c = commessa(t.commessaId);
@@ -489,12 +492,14 @@ function segnaStopManualeRevit() {
 }
 
 // Chiude il timer avviato da Revit salvando la registrazione senza chiedere nulla.
-function chiudiTimerRevit() {
+// fineEsatta: ora di fine (di default adesso, o l'ultima volta che il modello era aperto).
+function chiudiTimerRevit(fineEsatta) {
   const t = state.timer;
   const inizio = new Date(t.start);
   // Se l'app è rimasta chiusa a lungo, la fine è l'ultima volta che il modello era aperto.
   const visto = t.vistoIl ? new Date(t.vistoIl) : null;
-  const fine = visto && Date.now() - visto > 120000 ? visto : new Date();
+  let fine = fineEsatta || (visto && Date.now() - visto > 120000 ? visto : new Date());
+  if (fine < inizio) fine = inizio;
   const ore = round2(Math.max(0, fine - inizio) / 3600000);
   const c = commessa(t.commessaId);
   state.timer = null;
@@ -512,8 +517,34 @@ function avviaTimerRevit(c, modello) {
   state.impostazioni.ultimaCommessa = c.id;
 }
 
-function applicaRevit(modello) {
+function sogliaInattivita() {
+  return (Number(state.impostazioni.inattivitaMin) || 0) * 60;
+}
+
+// Avviso che resta in alto nella scheda Timer finché non lo chiudi.
+let avvisoTimer = '';
+function mostraAvviso(testo) {
+  avvisoTimer = testo;
+  if (vista !== 'timer') toast(testo);
+  render();
+}
+
+// secondiInattivo: da quanto non usi tastiera/mouse in quel Revit (null se il ponte non lo sa).
+function applicaRevit(modello, secondiInattivo) {
   if (dlgReg.open || dlgProm.open) return; // stai già salvando/rispondendo: si riprova alla prossima lettura
+  const soglia = sogliaInattivita();
+  const inattivo = soglia > 0 && secondiInattivo != null && secondiInattivo >= soglia;
+  const t0 = state.timer;
+  if (inattivo && t0 && t0.auto) {
+    // Fermo per inattività: le ore valgono fino all'ultima volta che hai lavorato in Revit.
+    const ultima = new Date(Date.now() - secondiInattivo * 1000);
+    const msg = chiudiTimerRevit(ultima);
+    revit.applicato = modello;
+    salva();
+    mostraAvviso(`Timer fermato: nessuna attività in Revit dalle ${hhmm(ultima)}.` + (msg ? ' ' + msg + '.' : '') +
+      ' Ripartirà quando torni a lavorare sul modello.');
+    return;
+  }
   const primaLettura = revit.applicato === PRIMA_LETTURA;
   const cambiato = !primaLettura && modello !== revit.applicato;
   revit.applicato = modello;
@@ -527,6 +558,7 @@ function applicaRevit(modello) {
       return;
     }
     if (!t && modello === revit.ignora) return;
+    if (!t && inattivo) return; // riparte solo quando torni a lavorare
     // un timer avviato a mano su un'altra commessa resta finché non cambi modello
     if (t && !t.auto && !cambiato) return;
     const msg = t ? chiudiTimerRevit() : '';
@@ -553,6 +585,7 @@ async function interrogaPonte() {
     dati = await r.json();
   } catch (e) { /* ponte non in esecuzione */ }
   revit.collegato = !!dati;
+  revit.vecchio = !!dati && !(dati.versione >= 2);
   if (dati) {
     revit.istanze = Array.isArray(dati.istanze) ? dati.istanze : [];
     const ist = scegliIstanza(revit.istanze);
@@ -562,7 +595,7 @@ async function interrogaPonte() {
     else revit.letture++;
     if (revit.letture >= 2) {
       revit.modello = modello;
-      applicaRevit(modello);
+      applicaRevit(modello, ist && typeof ist.secondiInattivo === 'number' ? ist.secondiInattivo : null);
     }
   }
   aggiornaUIRevit();
@@ -570,7 +603,7 @@ async function interrogaPonte() {
 
 function aggiornaUIRevit() {
   if (vista !== 'dati') return;
-  const firma = JSON.stringify([revit.collegato, revit.modello, revit.istanze.length, state.timer && state.timer.commessaId]);
+  const firma = JSON.stringify([revit.collegato, revit.vecchio, revit.modello, revit.istanze.length, state.timer && state.timer.commessaId]);
   if (firma === revit.firmaUI) return;
   revit.firmaUI = firma;
   const el = $('#cardRevit');
@@ -591,6 +624,11 @@ function cardRevit() {
     } else {
       const c = trovaCommessaPerModello(revit.modello);
       stato = `<p class="small" style="color:var(--ok)">✓ Ponte collegato${revit.istanze.length ? '' : ' · Revit non è aperto'}</p>`;
+      if (revit.vecchio) {
+        stato += `<p class="small" style="color:var(--danger)">Il ponte installato è una versione precedente e non rileva l'inattività:
+          scarica il ponte aggiornato e rifai «Installa ponte Revit.cmd».</p>
+          <p><a class="btn" href="ponte-revit.zip" download>⬇ Scarica il ponte aggiornato</a></p>`;
+      }
       if (revit.modello) {
         stato += `<p class="small">Modello attivo: <b>${esc(revit.modello)}</b><br>Commessa: ${c ? `<b>${esc(etichetta(c))}</b>` : '<i>non associata</i>'}</p>`;
         if (!c && state.commesse.some(x => !x.archiviata)) {
@@ -616,12 +654,42 @@ function cardRevit() {
         <option value="0"${imp.revitFerma === false ? ' selected' : ''}>lascia andare il timer</option>
       </select>
     </label>
+    <label>Ferma il timer se non lavori in Revit (tastiera e mouse) per
+      <select id="impInattivita">
+        ${[[0, 'mai'], [5, '5 minuti'], [10, '10 minuti'], [15, '15 minuti'], [20, '20 minuti'], [30, '30 minuti'], [45, '45 minuti'], [60, '1 ora']]
+          .map(([v, l]) => `<option value="${v}"${v === (Number(imp.inattivitaMin) || 0) ? ' selected' : ''}>${l}</option>`).join('')}
+      </select>
+    </label>
+    <p class="small muted">Le ore si contano fino all'ultima attività; quando torni a lavorare sul modello il timer riparte.
+      Lo standby del PC ferma il timer all'ora in cui il PC si è addormentato.</p>
     <p class="small muted">I modelli si associano in <b>Commesse</b> → tocca una commessa → <b>Modelli Revit</b>
       (uno per riga, basta una parte del nome del file).</p>` : ''}
   </section>`;
 }
 
 setInterval(interrogaPonte, 5000);
+
+/* ---- Standby del PC ---- */
+// Mentre l'app è aperta il controllo gira almeno una volta al minuto (anche ridotta a icona):
+// un salto di molti minuti significa che il PC era in standby/ibernazione.
+const SALTO_STANDBY = 8 * 60000;
+let ultimoBattito = Date.now();
+
+function controllaStandby() {
+  const ora = Date.now();
+  const prima = ultimoBattito;
+  ultimoBattito = ora;
+  const t = state.timer;
+  if (!t || ora - prima < SALTO_STANDBY || !state.impostazioni.revitAttivo) return;
+  if (new Date(t.start).getTime() >= prima) return;
+  if (dlgReg.open) dlgReg.close();
+  if (dlgProm.open) dlgProm.close();
+  const msg = chiudiTimerRevit(new Date(prima));
+  salva();
+  mostraAvviso(`Timer fermato: il PC era in standby dalle ${hhmm(new Date(prima))}.` + (msg ? ' ' + msg + '.' : ''));
+}
+setInterval(controllaStandby, 15000);
+document.addEventListener('visibilitychange', controllaStandby);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') interrogaPonte(); });
 
 /* ================== Vista: Registro ================== */
@@ -1192,6 +1260,7 @@ document.addEventListener('click', e => {
       case 'export': esportaExcel(); break;
       case 'share': condividiExcel(); break;
       case 'backup': esportaBackup(); break;
+      case 'chiudi-avviso': avvisoTimer = ''; render(); break;
       case 'revit-associa': {
         const c = commessa($('#revitAssocia').value);
         if (c && revit.modello) {
@@ -1200,7 +1269,7 @@ document.addEventListener('click', e => {
           revit.firmaUI = '';
           render();
           toast(`«${revit.modello}» associato a ${etichetta(c)}`);
-          applicaRevit(revit.modello);
+          applicaRevit(revit.modello, 0);
         }
         break;
       }
@@ -1247,6 +1316,10 @@ document.addEventListener('change', e => {
     salva();
     render();
     interrogaPonte();
+  } else if (t.id === 'impInattivita') {
+    state.impostazioni.inattivitaMin = Number(t.value);
+    salva();
+    toast('Impostazione salvata');
   } else if (t.id === 'impRevitFerma') {
     state.impostazioni.revitFerma = t.value === '1';
     salva();

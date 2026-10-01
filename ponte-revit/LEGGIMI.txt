@@ -15,6 +15,8 @@ Il ponte parte da solo a ogni accensione del PC, lavora in background senza fine
 e risponde solo al computer stesso (indirizzo 127.0.0.1, porta 47800).
 Non modifica Revit e non invia dati su Internet.
 Se apri Revit e Ore Commesse non e' aperta, il ponte la apre nel browser.
+Il ponte misura anche da quanto non usi Revit (tastiera e mouse), cosi' l'app ferma
+il timer quando smetti di lavorare o metti il PC in standby.
 
 DISINSTALLAZIONE
 Doppio clic su "Disinstalla ponte Revit.cmd".
