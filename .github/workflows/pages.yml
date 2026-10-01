@@ -15,36 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  android:
-    name: Compila l'app Android (APK)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: android-app/package-lock.json
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 21
-      - name: Prepara il progetto
-        working-directory: android-app
-        run: |
-          npm ci
-          npm run sync
-      - name: Compila l'APK firmato
-        working-directory: android-app/android
-        run: ./gradlew assembleRelease --no-daemon --stacktrace
-      - run: cp android-app/android/app/build/outputs/apk/release/app-release.apk ore-commesse.apk
-      - uses: actions/upload-artifact@v4
-        with:
-          name: apk
-          path: ore-commesse.apk
-
   deploy:
-    needs: android
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -55,10 +26,6 @@ jobs:
         run: |
           mkdir _site
           cp -r index.html styles.css app.js sync.js firebase-config.js sw.js manifest.webmanifest icons vendor _site/
-      - uses: actions/download-artifact@v4
-        with:
-          name: apk
-          path: _site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

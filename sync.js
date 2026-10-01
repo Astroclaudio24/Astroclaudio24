@@ -9,9 +9,7 @@
 //   utenti/{uid}/registrazioni/{id}
 //   utenti/{uid}/meta/stato        -> { timer, impostazioni }
 
-// Nell'app Android l'accesso Google tramite popup non è disponibile.
-const nativo = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
-const cfg = nativo ? null : window.FIREBASE_CONFIG;
+const cfg = window.FIREBASE_CONFIG;
 const App = window.OreApp;
 const BASE_KEY = 'oreCommesse.syncBase';
 const COLLEZIONI = ['commesse', 'registrazioni'];

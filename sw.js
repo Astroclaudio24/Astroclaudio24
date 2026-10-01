@@ -1,6 +1,6 @@
 // Service worker: rende l'app utilizzabile offline.
 // Aumenta VERSIONE ad ogni rilascio per aggiornare la cache.
-const VERSIONE = 'ore-commesse-v4';
+const VERSIONE = 'ore-commesse-v3';
 const FILE = [
   './',
   'index.html',
@@ -30,8 +30,7 @@ self.addEventListener('activate', e => {
 
 // Prima la rete (così gli aggiornamenti arrivano subito), poi la cache se offline.
 self.addEventListener('fetch', e => {
-  const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.endsWith('.apk')) return;
+  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
   e.respondWith(
     fetch(e.request)
       .then(res => {
