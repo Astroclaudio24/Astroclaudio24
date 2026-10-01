@@ -1,0 +1,20 @@
+PONTE REVIT per ORE COMMESSE
+============================
+
+Serve a far capire all'app Ore Commesse quale modello hai aperto in Revit,
+cosi' il timer passa da solo alla commessa giusta quando cambi modello.
+
+INSTALLAZIONE
+1. Estrai tutto lo zip in una cartella (tasto destro > Estrai tutto).
+2. Doppio clic su "Installa ponte Revit.cmd".
+   Se Windows mostra "PC protetto da Windows", clicca "Ulteriori informazioni" > "Esegui comunque".
+3. Apri Ore Commesse > Dati > Revit automatico: deve comparire "Ponte collegato".
+   Se il browser chiede di consentire l'accesso ai dispositivi della rete locale, clicca "Consenti".
+
+Il ponte parte da solo a ogni accensione del PC, lavora in background senza finestre
+e risponde solo al computer stesso (indirizzo 127.0.0.1, porta 47800).
+Non modifica Revit e non invia dati su Internet.
+Se apri Revit e Ore Commesse non e' aperta, il ponte la apre nel browser.
+
+DISINSTALLAZIONE
+Doppio clic su "Disinstalla ponte Revit.cmd".

@@ -11,6 +11,8 @@ App per tenere traccia delle ore lavorate sulle commesse, utilizzabile su **Wind
 - **Promemoria** «Stai ancora lavorando su…?» ogni 30 min / 1–8 ore (predefinito 2 ore) mentre il timer è attivo:
   finestra nell'app e notifica di sistema con i pulsanti *Sì, continuo* / *No, fermalo*. Se rispondi «No» più tardi,
   come ora di fine viene proposta quella del promemoria, così non conti ore non lavorate.
+- **Revit automatico** (PC Windows): con il *ponte Revit* l'app vede quale modello è aperto in Revit e, quando
+  cambi modello, salva le ore della commessa precedente e avvia il timer su quella associata.
 - **Inserimento manuale**: data, ora inizio/fine, pausa (le ore si calcolano da sole) oppure ore dirette, note.
 - **Registro**: filtri per periodo (oggi, settimana, mese, mese scorso, anno, personalizzato) e per commessa,
   totali di ore e importo.
@@ -24,6 +26,26 @@ App per tenere traccia delle ore lavorate sulle commesse, utilizzabile su **Wind
 - **Backup/ripristino** in JSON (con opzione *unisci*).
 
 I dati sono sempre salvati anche sul dispositivo: l'app funziona pure senza account e senza connessione.
+
+## Revit automatico (Windows)
+
+1. In **Commesse** apri una commessa e scrivi in **Modelli Revit** i nomi dei modelli (uno per riga; basta una
+   parte del nome del file, es. `Villa_Rossi` oppure il codice `C-014`). Vince la corrispondenza più lunga.
+2. In **Dati → Revit automatico** attiva l'opzione, scarica `ponte-revit.zip`, estrailo e fai doppio clic su
+   **Installa ponte Revit.cmd** (non servono permessi di amministratore).
+
+Il ponte ([`ponte-revit/ponte-revit.ps1`](ponte-revit/ponte-revit.ps1), PowerShell) parte all'accensione del PC,
+legge il titolo della finestra di Revit (qualsiasi versione) e risponde solo in locale su
+`http://127.0.0.1:47800/stato`; se apri Revit con l'app chiusa la apre nel browser.
+
+Regole del cambio automatico:
+- il modello deve restare lo stesso per due letture (circa 10 secondi) prima di cambiare commessa;
+- con più Revit aperti conta quello in primo piano; se lavori in un'altra finestra il timer resta dov'è;
+- cambiando modello le ore della commessa precedente vengono salvate senza chiedere (al minuto esatto);
+- chiudendo Revit o aprendo un modello senza commessa il timer avviato da Revit si ferma (disattivabile);
+- se fermi il timer a mano non riparte finché non apri un altro modello;
+- un timer avviato a mano resta finché non cambi modello;
+- se l'app è rimasta chiusa a lungo, la fine registrata è l'ultima volta in cui il modello risultava aperto.
 
 ## Configurare la sincronizzazione (Firebase, gratuito)
 
@@ -63,5 +85,6 @@ oppure avviare un piccolo server: `python -m http.server` e aprire `http://local
 | `index.html`, `styles.css`, `app.js` | L'app |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Installazione e funzionamento offline |
 | `sync.js`, `firebase-config.js`, `firestore.rules` | Sincronizzazione tramite Firebase |
+| `ponte-revit/` | Ponte Revit per Windows (script PowerShell + installazione/disinstallazione) |
 | `vendor/xlsx.mini.min.js` | [SheetJS](https://sheetjs.com) 0.18.5 per creare i file Excel (licenza Apache 2.0) |
 | `vendor/firebase.js` | Firebase JS SDK 12.19.0 in un unico file (licenza Apache 2.0), rigenerabile con `tools/build-firebase.sh` |

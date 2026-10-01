@@ -11,7 +11,7 @@ function statoVuoto() {
     commesse: [],
     registrazioni: [],
     timer: null,
-    impostazioni: { arrotondamento: 0, promemoria: 2 }
+    impostazioni: { arrotondamento: 0, promemoria: 2, revitAttivo: false, revitFerma: true }
   };
 }
 
@@ -234,6 +234,7 @@ function vistaTimer() {
       <div class="running-title"><span class="dot" style="background:${esc(c ? c.colore : '#999')}"></span>${esc(etichetta(c))}</div>
       <div class="clock" id="clock">00:00:00</div>
       <p class="muted small" style="text-align:center">Avviato alle ${hhmm(new Date(t.start))} del ${fmtData(isoData(new Date(t.start)))}</p>
+      ${t.auto ? `<p class="small" style="text-align:center">🔗 Avviato da Revit · modello <b>${esc(t.modello || '')}</b></p>` : ''}
       <label>Note / attività
         <input id="timerNote" value="${esc(t.note || '')}" placeholder="Cosa stai facendo?">
       </label>
@@ -433,6 +434,196 @@ if (navigator.serviceWorker) {
   });
 }
 
+/* ================== Revit automatico ================== */
+
+// Il «ponte Revit» (cartella ponte-revit/, programmino per Windows) dice quale
+// modello è aperto in Revit. Ogni commessa ha l'elenco dei suoi modelli
+// (anche solo parte del nome): quando cambia modello, il timer cambia commessa.
+
+const PONTE_URL = 'http://127.0.0.1:47800/stato';
+const PRIMA_LETTURA = {};
+const revit = {
+  collegato: null,        // null = non ancora verificato
+  istanze: [],
+  modello: '',            // modello attivo (dopo la conferma di stabilità)
+  candidato: null,        // ultima lettura, in attesa di conferma
+  letture: 0,
+  applicato: PRIMA_LETTURA,
+  ignora: null,           // modello per cui hai fermato a mano il timer
+  firmaUI: ''
+};
+
+function trovaCommessaPerModello(modello) {
+  if (!modello) return null;
+  const m = modello.toLowerCase();
+  let migliore = null, lunghezza = 0;
+  for (const c of state.commesse) {
+    if (c.archiviata) continue;
+    for (const voce of c.modelliRevit || []) {
+      const v = voce.trim().toLowerCase().replace(/\.(rvt|rfa|rte)$/, '');
+      if (v && m.includes(v) && v.length > lunghezza) { migliore = c; lunghezza = v.length; }
+    }
+  }
+  return migliore;
+}
+
+// Con più Revit aperti conta quello in primo piano; se sei in un'altra
+// finestra (es. il browser) resta sul modello del timer in corso.
+function scegliIstanza(istanze) {
+  const conModello = istanze.filter(i => i.modello);
+  if (!conModello.length) return null;
+  const inPrimoPiano = conModello.find(i => i.primoPiano);
+  if (inPrimoPiano) return inPrimoPiano;
+  if (state.timer) {
+    const attuale = conModello.find(i => {
+      const c = trovaCommessaPerModello(i.modello);
+      return c && c.id === state.timer.commessaId;
+    });
+    if (attuale) return attuale;
+  }
+  return conModello[0];
+}
+
+function segnaStopManualeRevit() {
+  if (state.timer && state.timer.auto) revit.ignora = state.timer.modello || revit.modello;
+}
+
+// Chiude il timer avviato da Revit salvando la registrazione senza chiedere nulla.
+function chiudiTimerRevit() {
+  const t = state.timer;
+  const inizio = new Date(t.start);
+  // Se l'app è rimasta chiusa a lungo, la fine è l'ultima volta che il modello era aperto.
+  const visto = t.vistoIl ? new Date(t.vistoIl) : null;
+  const fine = visto && Date.now() - visto > 120000 ? visto : new Date();
+  const ore = round2(Math.max(0, fine - inizio) / 3600000);
+  const c = commessa(t.commessaId);
+  state.timer = null;
+  if (ore < 0.02) return ''; // meno di un minuto: non si registra
+  state.registrazioni.push({
+    id: uid(), commessaId: t.commessaId, data: isoData(inizio),
+    inizio: hhmm(inizio), fine: hhmm(fine), pausa: 0, ore, note: t.note || ''
+  });
+  return `Salvate ${fmtOre(ore)} h su ${etichetta(c)}`;
+}
+
+function avviaTimerRevit(c, modello) {
+  const ora = new Date().toISOString();
+  state.timer = { commessaId: c.id, start: ora, confermato: ora, note: 'Revit: ' + modello, auto: true, modello, vistoIl: ora };
+  state.impostazioni.ultimaCommessa = c.id;
+}
+
+function applicaRevit(modello) {
+  if (dlgReg.open || dlgProm.open) return; // stai già salvando/rispondendo: si riprova alla prossima lettura
+  const primaLettura = revit.applicato === PRIMA_LETTURA;
+  const cambiato = !primaLettura && modello !== revit.applicato;
+  revit.applicato = modello;
+  if (cambiato) revit.ignora = null;
+  const c = trovaCommessaPerModello(modello);
+  const t = state.timer;
+  if (c) {
+    if (t && t.commessaId === c.id) {
+      // stessa commessa: aggiorna (al massimo una volta al minuto) l'ultima volta in cui il modello era aperto
+      if (t.auto && (!t.vistoIl || Date.now() - new Date(t.vistoIl) > 60000)) { t.vistoIl = new Date().toISOString(); salva(); }
+      return;
+    }
+    if (!t && modello === revit.ignora) return;
+    // un timer avviato a mano su un'altra commessa resta finché non cambi modello
+    if (t && !t.auto && !cambiato) return;
+    const msg = t ? chiudiTimerRevit() : '';
+    avviaTimerRevit(c, modello);
+    salva();
+    render();
+    toast([msg, 'Timer avviato su ' + etichetta(c)].filter(Boolean).join(' · '));
+  } else if (t && t.auto && state.impostazioni.revitFerma !== false) {
+    const msg = chiudiTimerRevit();
+    salva();
+    render();
+    toast((msg ? msg + ' · ' : '') + (modello ? 'modello senza commessa: timer fermato' : 'Revit chiuso: timer fermato'));
+  }
+}
+
+async function interrogaPonte() {
+  if (!state.impostazioni.revitAttivo) return;
+  let dati = null;
+  try {
+    const ctrl = new AbortController();
+    const tempo = setTimeout(() => ctrl.abort(), 3000);
+    const r = await fetch(PONTE_URL, { cache: 'no-store', signal: ctrl.signal, targetAddressSpace: 'loopback' });
+    clearTimeout(tempo);
+    dati = await r.json();
+  } catch (e) { /* ponte non in esecuzione */ }
+  revit.collegato = !!dati;
+  if (dati) {
+    revit.istanze = Array.isArray(dati.istanze) ? dati.istanze : [];
+    const ist = scegliIstanza(revit.istanze);
+    const modello = ist ? String(ist.modello) : '';
+    // il modello deve risultare uguale per due letture di fila (evita cambi durante il caricamento)
+    if (modello !== revit.candidato) { revit.candidato = modello; revit.letture = 1; }
+    else revit.letture++;
+    if (revit.letture >= 2) {
+      revit.modello = modello;
+      applicaRevit(modello);
+    }
+  }
+  aggiornaUIRevit();
+}
+
+function aggiornaUIRevit() {
+  if (vista !== 'dati') return;
+  const firma = JSON.stringify([revit.collegato, revit.modello, revit.istanze.length, state.timer && state.timer.commessaId]);
+  if (firma === revit.firmaUI) return;
+  revit.firmaUI = firma;
+  const el = $('#cardRevit');
+  if (el) el.outerHTML = cardRevit();
+}
+
+function cardRevit() {
+  const imp = state.impostazioni;
+  let stato = '';
+  if (imp.revitAttivo) {
+    if (revit.collegato === null) stato = '<p class="small muted">Ricerca del ponte Revit…</p>';
+    else if (!revit.collegato) {
+      stato = `<p class="small" style="color:var(--danger)">Ponte Revit non trovato su questo PC.</p>
+        <p class="small">Scarica il ponte, estrai lo zip e fai doppio clic su <b>«Installa ponte Revit.cmd»</b>
+          (si installa una volta sola e parte da solo all'accensione del PC).</p>
+        <p><a class="btn primary" href="ponte-revit.zip" download>⬇ Scarica il ponte Revit</a></p>
+        <p class="small muted">Se il browser chiede di consentire l'accesso ai dispositivi della rete locale, scegli «Consenti».</p>`;
+    } else {
+      const c = trovaCommessaPerModello(revit.modello);
+      stato = `<p class="small" style="color:var(--ok)">✓ Ponte collegato${revit.istanze.length ? '' : ' · Revit non è aperto'}</p>`;
+      if (revit.modello) {
+        stato += `<p class="small">Modello attivo: <b>${esc(revit.modello)}</b><br>Commessa: ${c ? `<b>${esc(etichetta(c))}</b>` : '<i>non associata</i>'}</p>`;
+        if (!c && state.commesse.some(x => !x.archiviata)) {
+          stato += `<div class="row">
+              <label>Associa questo modello a
+                <select id="revitAssocia">${opzioniCommesse()}</select>
+              </label>
+            </div>
+            <button data-act="revit-associa">Associa</button>`;
+        }
+      } else if (revit.istanze.length) {
+        stato += '<p class="small muted">Nessun modello aperto in Revit.</p>';
+      }
+    }
+  }
+  return `<section class="card" id="cardRevit">
+    <h2>Revit automatico</h2>
+    <label class="check"><input type="checkbox" id="impRevit"${imp.revitAttivo ? ' checked' : ''}> Cambia commessa da solo in base al modello aperto in Revit</label>
+    ${imp.revitAttivo ? `${stato}
+    <label>Quando chiudi Revit o apri un modello senza commessa
+      <select id="impRevitFerma">
+        <option value="1"${imp.revitFerma !== false ? ' selected' : ''}>ferma il timer e salva le ore</option>
+        <option value="0"${imp.revitFerma === false ? ' selected' : ''}>lascia andare il timer</option>
+      </select>
+    </label>
+    <p class="small muted">I modelli si associano in <b>Commesse</b> → tocca una commessa → <b>Modelli Revit</b>
+      (uno per riga, basta una parte del nome del file).</p>` : ''}
+  </section>`;
+}
+
+setInterval(interrogaPonte, 5000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') interrogaPonte(); });
+
 /* ================== Vista: Registro ================== */
 
 function vistaRegistro() {
@@ -543,7 +734,8 @@ function statoNotifiche() {
 function vistaDati() {
   const arr = Number(state.impostazioni.arrotondamento) || 0;
   const prom = Number(state.impostazioni.promemoria) || 0;
-  return `${cardSync()}
+  return `${cardRevit()}
+  ${cardSync()}
   <section class="card">
     <h2>Impostazioni</h2>
     <label>Arrotondamento del timer
@@ -574,7 +766,6 @@ function vistaDati() {
     <h2>Installa l'app</h2>
     <p class="small"><b>Windows:</b> apri questa pagina con Edge o Chrome e clicca l'icona «Installa app» nella barra degli indirizzi
       (oppure menu ⋯ → App → Installa questo sito come app).</p>
-    <p class="small"><b>Android:</b> apri la pagina con Chrome, menu ⋮ → «Installa app» / «Aggiungi a schermata Home».</p>
     <p class="small muted">Dopo l'installazione l'app funziona anche senza connessione.</p>
   </section>
   <section class="card">
@@ -720,7 +911,7 @@ formReg.addEventListener('submit', e => {
   const esistente = regInModifica && state.registrazioni.find(r => r.id === regInModifica);
   if (esistente) Object.assign(esistente, dati);
   else state.registrazioni.push(Object.assign({ id: regInModifica || uid() }, dati));
-  if (regDaTimer) state.timer = null;
+  if (regDaTimer) { segnaStopManualeRevit(); state.timer = null; }
   state.impostazioni.ultimaCommessa = dati.commessaId;
   salva();
   dlgReg.close();
@@ -744,6 +935,7 @@ function apriCommessa(id) {
   formCom.tariffa.value = c && c.tariffa ? c.tariffa : '';
   formCom.colore.value = c ? c.colore : COLORI[state.commesse.length % COLORI.length];
   formCom.archiviata.checked = !!(c && c.archiviata);
+  formCom.modelliRevit.value = c && c.modelliRevit ? c.modelliRevit.join('\n') : '';
   $('#btnComDelete').hidden = !c;
   dlgCom.showModal();
 }
@@ -774,7 +966,8 @@ formCom.addEventListener('submit', e => {
     cliente: formCom.cliente.value.trim(),
     tariffa: round2(parseFloat(String(formCom.tariffa.value).replace(',', '.'))) || 0,
     colore: formCom.colore.value,
-    archiviata: formCom.archiviata.checked
+    archiviata: formCom.archiviata.checked,
+    modelliRevit: formCom.modelliRevit.value.split('\n').map(x => x.trim()).filter(Boolean)
   };
   if (!dati.nome) return;
   const esistente = comInModifica && commessa(comInModifica);
@@ -992,13 +1185,25 @@ document.addEventListener('click', e => {
       case 'timer-start': avviaTimer(); break;
       case 'timer-stop': fermaTimer(); break;
       case 'timer-annulla':
-        if (confirm('Annullare il timer senza salvare il tempo?')) { state.timer = null; salva(); render(); }
+        if (confirm('Annullare il timer senza salvare il tempo?')) { segnaStopManualeRevit(); state.timer = null; salva(); render(); }
         break;
       case 'nuova-reg': apriRegistrazione(null); break;
       case 'nuova-commessa': apriCommessa(null); break;
       case 'export': esportaExcel(); break;
       case 'share': condividiExcel(); break;
       case 'backup': esportaBackup(); break;
+      case 'revit-associa': {
+        const c = commessa($('#revitAssocia').value);
+        if (c && revit.modello) {
+          c.modelliRevit = (c.modelliRevit || []).concat(revit.modello);
+          salva();
+          revit.firmaUI = '';
+          render();
+          toast(`«${revit.modello}» associato a ${etichetta(c)}`);
+          applicaRevit(revit.modello);
+        }
+        break;
+      }
       case 'notifiche': Notification.requestPermission().then(() => render()); break;
       case 'sync-accedi': window.OreSync && window.OreSync.accedi(); break;
       case 'sync-esci':
@@ -1036,6 +1241,16 @@ document.addEventListener('change', e => {
     state.impostazioni.arrotondamento = Number(t.value);
     salva();
     toast('Impostazione salvata');
+  } else if (t.id === 'impRevit') {
+    state.impostazioni.revitAttivo = t.checked;
+    revit.collegato = null; revit.firmaUI = '';
+    salva();
+    render();
+    interrogaPonte();
+  } else if (t.id === 'impRevitFerma') {
+    state.impostazioni.revitFerma = t.value === '1';
+    salva();
+    toast('Impostazione salvata');
   } else if (t.id === 'impPromemoria') {
     state.impostazioni.promemoria = Number(t.value);
     salva();
@@ -1060,6 +1275,7 @@ window.addEventListener('storage', e => {
 render();
 aggiornaBadge();
 controllaPromemoria();
+interrogaPonte();
 
 // Apertura dell'app da un pulsante della notifica (app chiusa).
 const azioneUrl = new URLSearchParams(location.search).get('promemoria');

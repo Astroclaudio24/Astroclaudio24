@@ -26,6 +26,7 @@ jobs:
         run: |
           mkdir _site
           cp -r index.html styles.css app.js sync.js firebase-config.js sw.js manifest.webmanifest icons vendor _site/
+          (cd ponte-revit && zip -q -X ../_site/ponte-revit.zip *)
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
