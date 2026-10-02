@@ -36,7 +36,11 @@ I dati sono sempre salvati anche sul dispositivo: l'app funziona pure senza acco
 
 Il ponte ([`ponte-revit/ponte-revit.ps1`](ponte-revit/ponte-revit.ps1), PowerShell) parte all'accensione del PC,
 legge il titolo della finestra di Revit (qualsiasi versione) e risponde solo in locale su
-`http://127.0.0.1:47800/stato`; se apri Revit con l'app chiusa la apre nel browser.
+`http://127.0.0.1:47800/stato`. Mostra l'icona di Ore Commesse nell'area di notifica (vicino all'orologio):
+un clic apre l'app o la riporta in primo piano. Se l'app viene chiusa mentre in Revit c'è un modello aperto, il ponte
+la riapre da solo entro pochi minuti, nello stesso browser (Edge o Chrome) in finestra a sé; si disattiva dal menu
+dell'icona. Con un timer in corso, chiudendo l'app il browser chiede conferma.
+I test del ponte girano su Windows in GitHub Actions ([`tools/test-ponte.ps1`](tools/test-ponte.ps1)).
 
 Regole del cambio automatico:
 - il modello deve restare lo stesso per due letture (circa 10 secondi) prima di cambiare commessa;

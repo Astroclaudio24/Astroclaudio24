@@ -7,6 +7,7 @@ echo  Installazione Ponte Revit per Ore Commesse...
 echo.
 if not exist "%DEST%" mkdir "%DEST%"
 copy /y "%~dp0ponte-revit.ps1" "%DEST%\ponte-revit.ps1" >nul
+copy /y "%~dp0icona.png" "%DEST%\icona.png" >nul 2>nul
 if errorlevel 1 (
   echo  ERRORE: non trovo ponte-revit.ps1. Estrai TUTTO lo zip in una cartella e riprova.
   pause
@@ -17,6 +18,7 @@ rem Chiude un eventuale ponte gia' in esecuzione e avvia quello nuovo.
 powershell -NoProfile -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | Where-Object { $_.CommandLine -like '*ponte-revit.ps1*' -and $_.ProcessId -ne $PID } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
 start "" powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "%DEST%\ponte-revit.ps1"
 echo  Fatto! Il ponte e' attivo e partira' da solo a ogni accensione del PC.
+echo  Trovi la sua icona in basso a destra, vicino all'orologio (eventualmente sotto la freccia ^^).
 echo  Ora apri Ore Commesse: in Dati - Revit automatico deve comparire "Ponte collegato".
 echo.
 pause

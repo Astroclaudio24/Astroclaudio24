@@ -15,6 +15,10 @@ Il ponte parte da solo a ogni accensione del PC, lavora in background senza fine
 e risponde solo al computer stesso (indirizzo 127.0.0.1, porta 47800).
 Non modifica Revit e non invia dati su Internet.
 Se apri Revit e Ore Commesse non e' aperta, il ponte la apre nel browser.
+L'icona di Ore Commesse compare in basso a destra vicino all'orologio (se non la vedi
+clicca la freccia ^): un clic apre l'app o la riporta in primo piano. Se chiudi l'app
+per errore mentre lavori su un modello Revit, il ponte la riapre da solo entro pochi
+minuti (si disattiva dal menu dell'icona, tasto destro).
 Il ponte misura anche da quanto non usi Revit (tastiera e mouse), cosi' l'app ferma
 il timer quando smetti di lavorare o metti il PC in standby.
 

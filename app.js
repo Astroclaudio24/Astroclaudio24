@@ -295,7 +295,7 @@ function aggiornaOrologio() {
   if (state.timer && el) {
     const txt = fmtDurata(Date.now() - new Date(state.timer.start).getTime());
     el.textContent = txt;
-    document.title = txt + ' · Ore Commesse';
+    document.title = 'Ore Commesse · ' + txt;
   } else {
     document.title = 'Ore Commesse';
   }
@@ -580,7 +580,9 @@ async function interrogaPonte() {
   try {
     const ctrl = new AbortController();
     const tempo = setTimeout(() => ctrl.abort(), 3000);
-    const r = await fetch(PONTE_URL, { cache: 'no-store', signal: ctrl.signal, targetAddressSpace: 'loopback' });
+    const t = state.timer;
+    const testo = t ? `${etichetta(commessa(t.commessaId))} · dalle ${hhmm(new Date(t.start))}` : 'Ore Commesse · nessun timer';
+    const r = await fetch(PONTE_URL + '?t=' + encodeURIComponent(testo), { cache: 'no-store', signal: ctrl.signal, targetAddressSpace: 'loopback' });
     clearTimeout(tempo);
     dati = await r.json();
   } catch (e) { /* ponte non in esecuzione */ }
@@ -660,6 +662,8 @@ function cardRevit() {
           .map(([v, l]) => `<option value="${v}"${v === (Number(imp.inattivitaMin) || 0) ? ' selected' : ''}>${l}</option>`).join('')}
       </select>
     </label>
+    <p class="small muted">L'icona di Ore Commesse è in basso a destra vicino all'orologio: un clic apre l'app.
+      Se la chiudi per errore mentre lavori su un modello, il ponte la riapre da solo entro pochi minuti.</p>
     <p class="small muted">Le ore si contano fino all'ultima attività; quando torni a lavorare sul modello il timer riparte.
       Lo standby del PC ferma il timer all'ora in cui il PC si è addormentato.</p>
     <p class="small muted">I modelli si associano in <b>Commesse</b> → tocca una commessa → <b>Modelli Revit</b>
@@ -668,6 +672,13 @@ function cardRevit() {
 }
 
 setInterval(interrogaPonte, 5000);
+
+// Chiusura per errore: con un timer in corso il browser chiede conferma.
+window.addEventListener('beforeunload', e => {
+  if (!state.timer) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 /* ---- Standby del PC ---- */
 // Mentre l'app è aperta il controllo gira almeno una volta al minuto (anche ridotta a icona):

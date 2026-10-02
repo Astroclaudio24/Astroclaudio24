@@ -15,7 +15,17 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test-ponte:
+    name: Test del ponte Revit su Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Esegui i test
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tools/test-ponte.ps1
+
   deploy:
+    needs: test-ponte
     runs-on: ubuntu-latest
     environment:
       name: github-pages
