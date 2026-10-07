@@ -12,7 +12,7 @@ function statoVuoto() {
     registrazioni: [],
     giorni: [],   // dati della giornata: { id: 'AAAA-MM-GG', attivita, ferie, trasferta, spese, vitto }
     timer: null,
-    impostazioni: { arrotondamento: 0, promemoria: 2, revitAttivo: false, revitFerma: true, inattivitaMin: 15, oreGiornata: 8, attivitaSu: 'pc' }
+    impostazioni: { arrotondamento: 0, promemoria: 2, revitAttivo: false, revitFerma: true, inattivitaMin: 15, oreGiornata: 8, attivitaSu: 'pc', suoni: true, volume: 60 }
   };
 }
 
@@ -338,6 +338,49 @@ function fermaTimer(fineStimata) {
   }, true);
 }
 
+/* ================== Avvisi sonori ================== */
+
+// Suoni generati al momento (nessun file): ognuno ha una melodia riconoscibile.
+const SUONI = {
+  promemoria: [[880, 0, 0.18], [1175, 0.22, 0.25], [880, 0.65, 0.18], [1175, 0.87, 0.35]], // «Stai ancora lavorando?»
+  cambio: [[660, 0, 0.12], [990, 0.15, 0.22]],                                          // avvio / cambio commessa
+  pausa: [[784, 0, 0.18], [587, 0.2, 0.18], [392, 0.4, 0.4]]                              // timer fermato da solo
+};
+let audioCtx = null;
+
+function contestoAudio() {
+  if (!audioCtx) {
+    const C = window.AudioContext || window.webkitAudioContext;
+    if (!C) return null;
+    audioCtx = new C();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+  return audioCtx;
+}
+// Il browser lascia suonare solo dopo un clic o un tasto: l'audio si attiva alla prima interazione.
+['pointerdown', 'keydown'].forEach(ev => document.addEventListener(ev, () => contestoAudio(), { passive: true }));
+
+function suona(tipo, forza) {
+  if (!forza && state.impostazioni.suoni === false) return;
+  const ctx = contestoAudio();
+  const note = SUONI[tipo];
+  if (!ctx || !note) return;
+  const volume = Math.max(0.0002, (Number(state.impostazioni.volume) || 60) / 100 * 0.5);
+  const t0 = ctx.currentTime + 0.03;
+  note.forEach(([freq, inizio, durata]) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, t0 + inizio);
+    gain.gain.exponentialRampToValueAtTime(volume, t0 + inizio + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + inizio + durata);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t0 + inizio);
+    osc.stop(t0 + inizio + durata + 0.05);
+  });
+}
+
 /* ================== Promemoria durante il timer ================== */
 
 // Ogni N ore (impostazioni.promemoria) chiede se si sta ancora lavorando
@@ -395,6 +438,7 @@ function controllaPromemoria() {
   const chiave = state.timer.start + '|' + (state.timer.confermato || '');
   if (ultimaNotifica !== chiave) {
     ultimaNotifica = chiave;
+    suona('promemoria');
     if (document.visibilityState !== 'visible') inviaNotifica(testo + ` Timer avviato alle ${hhmm(new Date(state.timer.start))}.`);
   }
   if (document.visibilityState === 'visible' && !dlgProm.open && !dlgReg.open) {
@@ -567,6 +611,7 @@ function applicaRevit(modello, secondiInattivo) {
     revit.applicato = modello;
     salva();
     const dove = revit.misuraPC ? 'sul PC' : 'in Revit';
+    suona('pausa');
     mostraAvviso(`Timer fermato: nessuna attività ${dove} dalle ${hhmm(ultima)}.` + (msg ? ' ' + msg + '.' : '') +
       ' Ripartirà quando torni a lavorare.');
     return;
@@ -591,11 +636,13 @@ function applicaRevit(modello, secondiInattivo) {
     avviaTimerRevit(c, modello);
     salva();
     render();
+    suona('cambio');
     toast([msg, 'Timer avviato su ' + etichetta(c)].filter(Boolean).join(' · '));
   } else if (t && t.auto && state.impostazioni.revitFerma !== false) {
     const msg = chiudiTimerRevit();
     salva();
     render();
+    suona('pausa');
     toast((msg ? msg + ' · ' : '') + (modello ? 'modello senza commessa: timer fermato' : 'Revit chiuso: timer fermato'));
   }
 }
@@ -734,6 +781,7 @@ function controllaStandby() {
   if (dlgProm.open) dlgProm.close();
   const msg = chiudiTimerRevit(new Date(prima));
   salva();
+  suona('pausa');
   mostraAvviso(`Timer fermato: il PC era in standby dalle ${hhmm(new Date(prima))}.` + (msg ? ' ' + msg + '.' : ''));
 }
 setInterval(controllaStandby, 15000);
@@ -888,6 +936,17 @@ function vistaDati() {
       </select>
     </label>
     ${statoNotifiche()}
+    <label class="check"><input type="checkbox" id="impSuoni"${state.impostazioni.suoni !== false ? ' checked' : ''}>
+      Avvisi sonori: promemoria, cambio di modello/commessa, pausa automatica</label>
+    <label>Volume
+      <input type="range" id="impVolume" min="5" max="100" step="5" value="${Number(state.impostazioni.volume) || 60}">
+    </label>
+    <div class="actions" style="margin-top:0">
+      <span class="small muted">Prova:</span>
+      <button data-act="prova-suono" data-suono="promemoria">🔔 Promemoria</button>
+      <button data-act="prova-suono" data-suono="cambio">⏩ Cambio</button>
+      <button data-act="prova-suono" data-suono="pausa">⏸ Pausa</button>
+    </div>
   </section>
   <section class="card">
     <h2>Backup</h2>
@@ -1346,6 +1405,7 @@ document.addEventListener('click', e => {
       case 'export': esportaExcel(); break;
       case 'share': condividiExcel(); break;
       case 'backup': esportaBackup(); break;
+      case 'prova-suono': suona(act.dataset.suono, true); break;
       case 'giornata': apriGiornata(act.dataset.data); break;
       case 'report-genera':
         generaReportMensile().catch(err => alert('Report non creato: ' + err.message));
@@ -1411,6 +1471,14 @@ document.addEventListener('change', e => {
     state.impostazioni.oreGiornata = Number(t.value) || 8;
     salva();
     toast('Impostazione salvata');
+  } else if (t.id === 'impSuoni') {
+    state.impostazioni.suoni = t.checked;
+    salva();
+    toast(t.checked ? 'Avvisi sonori attivi' : 'Avvisi sonori disattivati');
+  } else if (t.id === 'impVolume') {
+    state.impostazioni.volume = Number(t.value);
+    salva();
+    suona('cambio', true);
   } else if (t.id === 'impAttivitaSu') {
     state.impostazioni.attivitaSu = t.value;
     salva();

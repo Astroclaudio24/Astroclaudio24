@@ -17,6 +17,8 @@ App per tenere traccia delle ore lavorate sulle commesse, utilizzabile su **Wind
   in percentuale della giornata (arrotondata al 10%, somma 100%), più trasferta, nota spese, vitto, totale e attività svolte.
   Il vecchio report si importa una volta per portare nell'app tutto lo storico.
 - **Giornata** (📝): attività svolte, ferie, trasferta, nota spese e vitto di ogni giorno.
+- **Avvisi sonori** (attivabili, con volume e prova in *Dati*): un suono per il promemoria «Stai ancora lavorando?»,
+  uno per l'avvio/cambio automatico di commessa, uno per la pausa automatica (inattività, standby, Revit chiuso).
 - **Inserimento manuale**: data, ora inizio/fine, pausa (le ore si calcolano da sole) oppure ore dirette, note.
 - **Registro**: filtri per periodo (oggi, settimana, mese, mese scorso, anno, personalizzato) e per commessa,
   totali di ore e importo.
