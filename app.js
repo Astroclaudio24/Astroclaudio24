@@ -213,11 +213,71 @@ function render() {
 
 /* ================== Vista: Timer ================== */
 
+// Righe di una giornata: le registrazioni della stessa commessa diventano una sola voce
+// (totale ore e intervalli); un clic la apre per vedere e correggere i singoli intervalli.
+const gruppiAperti = new Set();
+
+function righeGiorno(regs) {
+  const perCommessa = new Map();
+  regs.forEach(r => {
+    if (!perCommessa.has(r.commessaId)) perCommessa.set(r.commessaId, []);
+    perCommessa.get(r.commessaId).push(r);
+  });
+  return [...perCommessa.values()].map(g => g.length === 1 ? rigaRegistrazione(g[0], false) : rigaGruppo(g, regs)).join('');
+}
+
+function fmtMinuti(m) {
+  return m >= 60 ? Math.floor(m / 60) + ' h ' + (m % 60 ? (m % 60) + ' min' : '') : m + ' min';
+}
+
+// Pause tra un intervallo e il successivo della stessa commessa. Se nel frattempo c'è
+// una registrazione su un'altra commessa, quel tempo è indicato come «altre commesse».
+function pauseTra(ordinate, tutte) {
+  const pause = [];
+  for (let i = 1; i < ordinate.length; i++) {
+    const a = ordinate[i - 1], b = ordinate[i];
+    if (!a.fine || !b.inizio) continue;
+    const da = minuti(a.fine), al = minuti(b.inizio);
+    if (al <= da) continue;
+    const altre = tutte.some(r => r.commessaId !== a.commessaId && r.inizio && r.fine &&
+      minuti(r.inizio) < al && minuti(r.fine) > da);
+    pause.push({ dopo: a.id, da: a.fine, al: b.inizio, min: al - da, altre });
+  }
+  return pause;
+}
+
+function rigaGruppo(g, tutte) {
+  const ordinate = ordinaRegistrazioni(g, false);
+  const pause = pauseTra(ordinate, tutte || g);
+  const minPausa = pause.filter(x => !x.altre).reduce((t, x) => t + x.min, 0) +
+    ordinate.reduce((t, r) => t + (Number(r.pausa) || 0), 0);
+  const r0 = ordinate[0];
+  const c = commessa(r0.commessaId);
+  const chiave = r0.data + '|' + r0.commessaId;
+  const aperto = gruppiAperti.has(chiave);
+  const intervalli = ordinate.map(r => r.inizio && r.fine ? r.inizio + '–' + r.fine : fmtOre(r.ore) + ' h').join(', ');
+  const note = [...new Set(ordinate.map(r => (r.note || '').trim()).filter(Boolean))].join(' · ');
+  const sub = `${g.length} intervalli: ${intervalli}` + (minPausa ? ` · pause ${fmtMinuti(minPausa)}` : '') + (note ? ' · ' + note : '');
+  return `<li data-gruppo="${esc(chiave)}" title="Mostra/nascondi i singoli intervalli">
+    <span class="dot" style="background:${esc(c ? c.colore : '#999')}"></span>
+    <div class="main">
+      <div class="title">${esc(etichetta(c))}</div>
+      <div class="sub">${esc(sub)}</div>
+    </div>
+    <span class="hours">${fmtOre(totaleOre(g))} h <span class="freccia">${aperto ? '▾' : '▸'}</span></span>
+  </li>` + (aperto ? ordinate.map(r => {
+    const riga = rigaRegistrazione(r, false).replace('<li ', '<li class="sotto" ');
+    const p = pause.find(x => x.dopo === r.id);
+    return riga + (p ? `<li class="pausa-riga">⏸ ${p.altre ? 'Su altre commesse' : 'Pausa'} ${esc(p.da)}–${esc(p.al)} · ${fmtMinuti(p.min)}</li>` : '');
+  }).join('') : '');
+}
+
 function rigaRegistrazione(r, mostraData) {
   const c = commessa(r.commessaId);
   const orari = r.inizio && r.fine ? r.inizio + '–' + r.fine : '';
   const quota = typeof r.pct === 'number' ? Math.round(r.pct * 100) + '% della giornata' : '';
-  const sub = [mostraData ? fmtData(r.data) : '', orari, quota, r.note].filter(Boolean).join(' · ');
+  const pausa = Number(r.pausa) > 0 ? 'pausa ' + fmtMinuti(Number(r.pausa)) : '';
+  const sub = [mostraData ? fmtData(r.data) : '', orari, pausa, quota, r.note].filter(Boolean).join(' · ');
   return `<li data-reg="${esc(r.id)}">
     <span class="dot" style="background:${esc(c ? c.colore : '#999')}"></span>
     <div class="main">
@@ -288,7 +348,7 @@ function vistaTimer() {
       <button data-act="giornata" data-data="${oggiISO()}" title="Attività svolte, ferie, trasferta, spese">📝 Giornata</button>
       <button data-act="nuova-reg"${state.commesse.length ? '' : ' disabled'}>+ Aggiungi ore</button>
     </div>
-    ${oggi.length ? `<ul class="list">${oggi.map(r => rigaRegistrazione(r, false)).join('')}</ul>`
+    ${oggi.length ? `<ul class="list">${righeGiorno(oggi)}</ul>`
                   : '<p class="empty">Nessuna registrazione oggi.</p>'}
   </section>`;
   return html;
@@ -854,7 +914,7 @@ function vistaRegistro() {
   <section class="card">
     ${gruppi.length ? gruppi.map(g => `
       ${intestazioneGiorno(g.data, g.items)}
-      <ul class="list">${g.items.map(r => rigaRegistrazione(r, false)).join('')}</ul>`).join('')
+      <ul class="list">${righeGiorno(g.items)}</ul>`).join('')
       : '<p class="empty">Nessuna registrazione nel periodo selezionato.</p>'}
   </section>`;
 }
@@ -1440,6 +1500,13 @@ document.addEventListener('click', e => {
         }
         break;
     }
+    return;
+  }
+  const gruppo = e.target.closest('[data-gruppo]');
+  if (gruppo) {
+    const k = gruppo.dataset.gruppo;
+    if (gruppiAperti.has(k)) gruppiAperti.delete(k); else gruppiAperti.add(k);
+    render();
     return;
   }
   const reg = e.target.closest('[data-reg]');
