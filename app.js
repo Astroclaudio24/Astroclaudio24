@@ -1053,6 +1053,9 @@ const TESTI_SYNC = {
   'avvio': ['…', 'Avvio in corso'],
   'disconnesso': ['☁ non connesso', 'Non connesso'],
   'offline': ['☁ offline', 'Offline: le modifiche verranno inviate appena torna la connessione'],
+  'connessione': ['☁ …', 'Connessione al cloud in corso…'],
+  'irraggiungibile': ['☁ !', 'Il server del cloud non risponde. Le modifiche restano salvate sul PC e partiranno appena possibile. ' +
+    'Se dura, un antivirus, un firewall o la rete aziendale potrebbero bloccare «firestore.googleapis.com».'],
   'in-attesa': ['☁ invio…', 'Invio delle modifiche in corso'],
   'sincronizzato': ['☁ ✓', 'Sincronizzato'],
   'errore': ['☁ errore', 'Errore']

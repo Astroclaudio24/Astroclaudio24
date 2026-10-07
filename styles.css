@@ -251,3 +251,4 @@ button.mini-testo { border: 0; background: none; color: var(--primary); padding:
 .list li.sotto .title { font-weight: 500; font-size: .92rem; }
 .list .freccia { color: var(--muted); font-weight: 400; margin-left: 4px; }
 .list li.pausa-riga { padding: 4px 4px 4px 30px; font-size: .82rem; color: var(--muted); background: var(--bg); cursor: default; border-bottom: 1px dashed var(--border); }
+.sync-badge.irraggiungibile { color: var(--danger); border-color: var(--danger); }

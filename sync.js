@@ -17,6 +17,8 @@ const COLLEZIONI = ['commesse', 'registrazioni', 'giorni'];
 
 let fb = null, auth = null, db = null, utente = null;
 let ascolti = [];
+let avviatoIl = 0;          // quando è partita la connessione (per distinguere «in corso» da «irraggiungibile»)
+let timerStato = null;
 let base = null;            // ciò che sappiamo essere su Firestore: id -> impronta
 const flag = {};            // stato dei listener: { pendenti, cache }
 let stato = cfg ? 'avvio' : 'non-configurata';
@@ -50,7 +52,11 @@ const pulisci = v => JSON.parse(JSON.stringify(v));
 const meta = s => ({ timer: s.timer || null, impostazioni: s.impostazioni || {} });
 const perId = arr => arr.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
-function baseVuota(uid) { return { uid, commesse: {}, registrazioni: {}, meta: null }; }
+function baseVuota(uid) {
+  const b = { uid, meta: null };
+  COLLEZIONI.forEach(col => { b[col] = {}; });
+  return b;
+}
 
 function caricaBase() {
   try { return JSON.parse(localStorage.getItem(BASE_KEY)); } catch (e) { return null; }
@@ -85,7 +91,11 @@ function ricalcolaStato() {
   else if (stato !== 'errore') {
     const f = Object.values(flag);
     if (f.some(x => x.pendenti)) stato = 'in-attesa';
-    else if (f.length < 3 || f.some(x => x.cache)) stato = 'offline';
+    else if (f.length < COLLEZIONI.length + 1 || f.some(x => x.cache)) {
+      if (!navigator.onLine) stato = 'offline';
+      else if (Date.now() - avviatoIl < 20000) stato = 'connessione';
+      else stato = 'irraggiungibile';
+    }
     else stato = 'sincronizzato';
   }
   App.aggiornaSync();
@@ -100,6 +110,7 @@ function push() {
   const s = App.state;
   const ops = [];
   for (const col of COLLEZIONI) {
+    if (!base[col]) base[col] = {};   // collezioni aggiunte in versioni successive
     const noti = base[col];
     const presenti = new Set();
     for (const item of s[col]) {
@@ -186,8 +197,11 @@ function avvia(u) {
     if (!App.state.timer) base.meta = impronta(meta(App.state));
   }
   push();
-  ascolti = [ascoltaCollezione('commesse'), ascoltaCollezione('registrazioni'), ascoltaMeta()];
+  avviatoIl = Date.now();
+  ascolti = [...COLLEZIONI.map(ascoltaCollezione), ascoltaMeta()];
   ricalcolaStato();
+  clearTimeout(timerStato);
+  timerStato = setTimeout(ricalcolaStato, 21000);
 }
 
 function ferma() {
@@ -220,6 +234,9 @@ async function esci() {
   base = null;
 }
 
+window.addEventListener('online', () => ricalcolaStato());
+window.addEventListener('offline', () => ricalcolaStato());
+
 window.OreSync = {
   push,
   accedi,
@@ -240,6 +257,9 @@ if (cfg) {
     auth = fb.getAuth(app);
     auth.languageCode = 'it';
     db = fb.initializeFirestore(app, {
+      // «Long polling»: funziona anche dietro antivirus, firewall e proxy aziendali
+      // che bloccano il canale in streaming usato di solito da Firestore.
+      experimentalForceLongPolling: true,
       localCache: fb.persistentLocalCache({ tabManager: fb.persistentMultipleTabManager() })
     });
     // Solo per sviluppo/test: emulatori locali di Firebase.
