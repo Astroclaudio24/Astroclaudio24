@@ -12,7 +12,7 @@ function statoVuoto() {
     registrazioni: [],
     giorni: [],   // dati della giornata: { id: 'AAAA-MM-GG', attivita, ferie, trasferta, spese, vitto }
     timer: null,
-    impostazioni: { arrotondamento: 0, promemoria: 2, revitAttivo: false, revitFerma: true, inattivitaMin: 15, oreGiornata: 8 }
+    impostazioni: { arrotondamento: 0, promemoria: 2, revitAttivo: false, revitFerma: true, inattivitaMin: 15, oreGiornata: 8, attivitaSu: 'pc' }
   };
 }
 
@@ -508,11 +508,32 @@ function chiudiTimerRevit(fineEsatta) {
   const c = commessa(t.commessaId);
   state.timer = null;
   if (ore < 0.02) return ''; // meno di un minuto: non si registra
+  if (unisciAllaPrecedente(t.commessaId, inizio, fine, ore)) return `Aggiunte ${fmtOre(ore)} h su ${etichetta(c)}`;
   state.registrazioni.push({
     id: uid(), commessaId: t.commessaId, data: isoData(inizio),
-    inizio: hhmm(inizio), fine: hhmm(fine), pausa: 0, ore, note: t.note || ''
+    inizio: hhmm(inizio), fine: hhmm(fine), pausa: 0, ore, note: t.note || '', auto: true
   });
   return `Salvate ${fmtOre(ore)} h su ${etichetta(c)}`;
+}
+
+// Se il timer automatico riparte sulla stessa commessa poco dopo (stesso giorno, pausa sotto
+// i 60 minuti), allunga la registrazione precedente invece di crearne una nuova: la pausa
+// finisce nel campo «Pausa» e le ore si sommano.
+const PAUSA_MAX_UNIONE = 60;
+function unisciAllaPrecedente(commessaId, inizio, fine, ore) {
+  const data = isoData(inizio);
+  if (isoData(fine) !== data) return false;
+  const inizioMin = minuti(hhmm(inizio));
+  const prec = state.registrazioni
+    .filter(r => r.auto && r.commessaId === commessaId && r.data === data && r.fine && minuti(r.fine) <= inizioMin)
+    .sort((a, b) => minuti(b.fine) - minuti(a.fine))[0];
+  if (!prec) return false;
+  const pausa = inizioMin - minuti(prec.fine);
+  if (pausa > PAUSA_MAX_UNIONE) return false;
+  prec.fine = hhmm(fine);
+  prec.pausa = (Number(prec.pausa) || 0) + pausa;
+  prec.ore = round2((Number(prec.ore) || 0) + ore);
+  return true;
 }
 
 function avviaTimerRevit(c, modello) {
@@ -545,8 +566,9 @@ function applicaRevit(modello, secondiInattivo) {
     const msg = chiudiTimerRevit(ultima);
     revit.applicato = modello;
     salva();
-    mostraAvviso(`Timer fermato: nessuna attività in Revit dalle ${hhmm(ultima)}.` + (msg ? ' ' + msg + '.' : '') +
-      ' Ripartirà quando torni a lavorare sul modello.');
+    const dove = revit.misuraPC ? 'sul PC' : 'in Revit';
+    mostraAvviso(`Timer fermato: nessuna attività ${dove} dalle ${hhmm(ultima)}.` + (msg ? ' ' + msg + '.' : '') +
+      ' Ripartirà quando torni a lavorare.');
     return;
   }
   const primaLettura = revit.applicato === PRIMA_LETTURA;
@@ -601,7 +623,11 @@ async function interrogaPonte() {
     else revit.letture++;
     if (revit.letture >= 2) {
       revit.modello = modello;
-      applicaRevit(modello, ist && typeof ist.secondiInattivo === 'number' ? ist.secondiInattivo : null);
+      // Inattività: uso di tutto il PC (Revit, AutoCAD, …) oppure solo di Revit, secondo l'impostazione.
+      const suPC = state.impostazioni.attivitaSu !== 'revit' && typeof dati.secondiInattivoPC === 'number';
+      revit.misuraPC = suPC;
+      const inattivo = suPC ? dati.secondiInattivoPC : (ist && typeof ist.secondiInattivo === 'number' ? ist.secondiInattivo : null);
+      applicaRevit(modello, inattivo);
     }
   }
   aggiornaUIRevit();
@@ -660,7 +686,13 @@ function cardRevit() {
         <option value="0"${imp.revitFerma === false ? ' selected' : ''}>lascia andare il timer</option>
       </select>
     </label>
-    <label>Ferma il timer se non lavori in Revit (tastiera e mouse) per
+    <label>Conta come lavoro sulla commessa del modello aperto
+      <select id="impAttivitaSu">
+        <option value="pc"${imp.attivitaSu !== 'revit' ? ' selected' : ''}>l'uso di tutto il PC (Revit, AutoCAD, Excel…)</option>
+        <option value="revit"${imp.attivitaSu === 'revit' ? ' selected' : ''}>solo l'uso di Revit</option>
+      </select>
+    </label>
+    <label>Ferma il timer dopo un'inattività (tastiera e mouse) di
       <select id="impInattivita">
         ${[[0, 'mai'], [5, '5 minuti'], [10, '10 minuti'], [15, '15 minuti'], [20, '20 minuti'], [30, '30 minuti'], [45, '45 minuti'], [60, '1 ora']]
           .map(([v, l]) => `<option value="${v}"${v === (Number(imp.inattivitaMin) || 0) ? ' selected' : ''}>${l}</option>`).join('')}
@@ -668,7 +700,8 @@ function cardRevit() {
     </label>
     <p class="small muted">L'icona di Ore Commesse è in basso a destra vicino all'orologio: un clic apre l'app.
       Se la chiudi per errore mentre lavori su un modello, il ponte la riapre da solo entro pochi minuti.</p>
-    <p class="small muted">Le ore si contano fino all'ultima attività; quando torni a lavorare sul modello il timer riparte.
+    <p class="small muted">Le ore si contano fino all'ultima attività; quando torni a lavorare il timer riparte. Se riparte
+      sulla stessa commessa entro un'ora, la riga del registro viene allungata (la pausa finisce nel campo «Pausa»).
       Lo standby del PC ferma il timer all'ora in cui il PC si è addormentato.</p>
     <p class="small muted">I modelli si associano in <b>Commesse</b> → tocca una commessa → <b>Modelli Revit</b>
       (uno per riga, basta una parte del nome del file).</p>` : ''}
@@ -1376,6 +1409,10 @@ document.addEventListener('change', e => {
     interrogaPonte();
   } else if (t.id === 'impOreGiornata') {
     state.impostazioni.oreGiornata = Number(t.value) || 8;
+    salva();
+    toast('Impostazione salvata');
+  } else if (t.id === 'impAttivitaSu') {
+    state.impostazioni.attivitaSu = t.value;
     salva();
     toast('Impostazione salvata');
   } else if (t.id === 'impInattivita') {

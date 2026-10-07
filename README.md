@@ -74,8 +74,11 @@ Regole del cambio automatico:
 - se fermi il timer a mano non riparte finché non apri un altro modello;
 - un timer avviato a mano resta finché non cambi modello;
 - se l'app è rimasta chiusa a lungo, la fine registrata è l'ultima volta in cui il modello risultava aperto.
-- se non usi Revit (tastiera e mouse) per 15 minuti (impostabile, anche «mai») il timer si ferma: le ore contano
-  fino all'ultima attività e il timer riparte da solo quando torni a lavorare sul modello;
+- se non usi il PC (tastiera e mouse) per 15 minuti (impostabile, anche «mai») il timer si ferma: le ore contano
+  fino all'ultima attività e il timer riparte da solo quando torni a lavorare. Di base conta l'uso di tutto il PC, così
+  lavorare in AutoCAD o Excel sulla stessa commessa non interrompe il timer; in alternativa si può contare solo Revit;
+- se il timer automatico riparte sulla stessa commessa entro 60 minuti nello stesso giorno, la registrazione precedente
+  viene allungata (la pausa va nel campo «Pausa») invece di crearne una nuova;
 - se il PC va in standby il timer si ferma all'ora in cui il PC si è addormentato.
 
 ## Configurare la sincronizzazione (Firebase, gratuito)
