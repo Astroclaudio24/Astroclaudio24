@@ -99,11 +99,44 @@
     </div>
   </dialog>
 
+  <!-- Dialog dati della giornata (per il report mensile) -->
+  <dialog id="dlgGiorno">
+    <form method="dialog" id="formGiorno">
+      <h2 id="dlgGiornoTitolo">Giornata</h2>
+      <label>Attività svolte
+        <textarea name="attivita" rows="3"></textarea>
+      </label>
+      <button type="button" class="mini-testo" id="btnGiornoNote">Usa le note delle registrazioni</button>
+      <div class="row">
+        <label class="check"><input type="checkbox" name="ferie"> Ferie</label>
+        <label>Trasferta
+          <select name="trasferta">
+            <option value="">Nessuna</option>
+            <option>TRASFERTA</option>
+            <option>TRASFERTA GIORNALIERA</option>
+            <option>TRASFERTA + PERNOTTAMENTO</option>
+          </select>
+        </label>
+      </div>
+      <div class="row">
+        <label>Nota spese (€) <input type="number" name="spese" min="0" step="0.01" inputmode="decimal"></label>
+        <label>Vitto (€) <input type="number" name="vitto" min="0" step="0.01" inputmode="decimal"></label>
+      </div>
+      <div class="actions">
+        <span class="spacer"></span>
+        <button type="button" id="btnGiornoAnnulla">Annulla</button>
+        <button type="submit" class="primary">Salva</button>
+      </div>
+    </form>
+  </dialog>
+
+  <input type="file" id="fileReport" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
   <input type="file" id="fileImport" accept="application/json,.json" hidden>
 
   <script src="vendor/xlsx.mini.min.js"></script>
   <script src="firebase-config.js"></script>
   <script src="app.js"></script>
+  <script src="report.js"></script>
   <script type="module" src="sync.js"></script>
 </body>
 </html>

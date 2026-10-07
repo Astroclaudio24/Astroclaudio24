@@ -10,8 +10,9 @@ function statoVuoto() {
     versione: 1,
     commesse: [],
     registrazioni: [],
+    giorni: [],   // dati della giornata: { id: 'AAAA-MM-GG', attivita, ferie, trasferta, spese, vitto }
     timer: null,
-    impostazioni: { arrotondamento: 0, promemoria: 2, revitAttivo: false, revitFerma: true, inattivitaMin: 15 }
+    impostazioni: { arrotondamento: 0, promemoria: 2, revitAttivo: false, revitFerma: true, inattivitaMin: 15, oreGiornata: 8 }
   };
 }
 
@@ -22,6 +23,7 @@ function normalizza(s) {
     versione: 1,
     commesse: Array.isArray(s.commesse) ? s.commesse : [],
     registrazioni: Array.isArray(s.registrazioni) ? s.registrazioni : [],
+    giorni: Array.isArray(s.giorni) ? s.giorni : [],
     timer: s.timer && s.timer.commessaId && s.timer.start ? s.timer : null,
     impostazioni: Object.assign({}, d.impostazioni, s.impostazioni || {})
   };
@@ -214,7 +216,8 @@ function render() {
 function rigaRegistrazione(r, mostraData) {
   const c = commessa(r.commessaId);
   const orari = r.inizio && r.fine ? r.inizio + '–' + r.fine : '';
-  const sub = [mostraData ? fmtData(r.data) : '', orari, r.note].filter(Boolean).join(' · ');
+  const quota = typeof r.pct === 'number' ? Math.round(r.pct * 100) + '% della giornata' : '';
+  const sub = [mostraData ? fmtData(r.data) : '', orari, quota, r.note].filter(Boolean).join(' · ');
   return `<li data-reg="${esc(r.id)}">
     <span class="dot" style="background:${esc(c ? c.colore : '#999')}"></span>
     <div class="main">
@@ -282,6 +285,7 @@ function vistaTimer() {
     <div class="actions" style="margin:0 0 8px">
       <h2 style="margin:0">Oggi</h2>
       <span class="spacer"></span>
+      <button data-act="giornata" data-data="${oggiISO()}" title="Attività svolte, ferie, trasferta, spese">📝 Giornata</button>
       <button data-act="nuova-reg"${state.commesse.length ? '' : ' disabled'}>+ Aggiungi ore</button>
     </div>
     ${oggi.length ? `<ul class="list">${oggi.map(r => rigaRegistrazione(r, false)).join('')}</ul>`
@@ -722,13 +726,18 @@ function vistaRegistro() {
   ];
   const [da, a] = intervalloPeriodo(filtro.periodo);
 
-  // Raggruppa per giorno (più recenti in alto)
-  const gruppi = [];
+  // Raggruppa per giorno (più recenti in alto), compresi i giorni con solo ferie/spese/attività
+  const perData = new Map();
   ordinaRegistrazioni(list, true).forEach(r => {
-    const g = gruppi[gruppi.length - 1];
-    if (g && g.data === r.data) g.items.push(r);
-    else gruppi.push({ data: r.data, items: [r] });
+    if (!perData.has(r.data)) perData.set(r.data, []);
+    perData.get(r.data).push(r);
   });
+  if (!filtro.commessaId) {
+    state.giorni.forEach(g => {
+      if ((!da || g.id >= da) && (!a || g.id <= a) && !perData.has(g.id)) perData.set(g.id, []);
+    });
+  }
+  const gruppi = [...perData.keys()].sort().reverse().map(data => ({ data, items: perData.get(data) }));
 
   const condivisione = !!(navigator.canShare && window.File);
 
@@ -763,10 +772,25 @@ function vistaRegistro() {
   </section>
   <section class="card">
     ${gruppi.length ? gruppi.map(g => `
-      <div class="day-head"><span>${esc(fmtGiorno(g.data))}</span><span>${fmtOre(totaleOre(g.items))} h</span></div>
+      ${intestazioneGiorno(g.data, g.items)}
       <ul class="list">${g.items.map(r => rigaRegistrazione(r, false)).join('')}</ul>`).join('')
       : '<p class="empty">Nessuna registrazione nel periodo selezionato.</p>'}
   </section>`;
+}
+
+// Intestazione di un giorno nel Registro: data, segni (ferie, trasferta, spese), ore e pulsante «Giornata».
+function intestazioneGiorno(data, items) {
+  const g = state.giorni.find(x => x.id === data) || {};
+  const segni = [
+    g.ferie ? '🏖 ferie' : '',
+    g.trasferta ? '🚗 ' + g.trasferta.toLowerCase() : '',
+    g.spese || g.vitto ? '€ ' + fmtOre((g.spese || 0) + (g.vitto || 0)) : ''
+  ].filter(Boolean).join(' · ');
+  return `<div class="day-head">
+      <span>${esc(fmtGiorno(data))}${segni ? ` <span class="segni">${esc(segni)}</span>` : ''}</span>
+      <span>${items.length ? fmtOre(totaleOre(items)) + ' h ' : ''}<button class="mini" data-act="giornata" data-data="${esc(data)}" title="Attività, ferie, trasferta, spese">📝</button></span>
+    </div>
+    ${g.attivita ? `<p class="small muted attivita-giorno">${esc(g.attivita)}</p>` : ''}`;
 }
 
 /* ================== Vista: Commesse ================== */
@@ -813,7 +837,8 @@ function statoNotifiche() {
 function vistaDati() {
   const arr = Number(state.impostazioni.arrotondamento) || 0;
   const prom = Number(state.impostazioni.promemoria) || 0;
-  return `${cardRevit()}
+  return `${cardReport()}
+  ${cardRevit()}
   ${cardSync()}
   <section class="card">
     <h2>Impostazioni</h2>
@@ -850,6 +875,23 @@ function vistaDati() {
   <section class="card">
     <h2>Zona pericolosa</h2>
     <button class="danger" data-act="reset">Cancella tutti i dati</button>
+  </section>`;
+}
+
+function cardReport() {
+  const og = Number(state.impostazioni.oreGiornata) || 8;
+  return `<section class="card">
+    <h2>Report mensile</h2>
+    <p class="small muted">Crea il file Excel del report: un foglio <b>COMMESSE</b> con tutte le commesse e un foglio per ogni mese
+      con solo le commesse svolte, in percentuale della giornata (arrotondata al 10%), più trasferta, spese, vitto e attività svolte.
+      Ferie, trasferte, spese e attività si inseriscono con 📝 nella giornata (scheda Timer o Registro).</p>
+    <div class="actions">
+      <button class="primary" data-act="report-genera">⬇ Genera report mensile</button>
+      <button data-act="report-importa">⬆ Importa il vecchio report</button>
+    </div>
+    <label>Ore di una giornata piena (per convertire le percentuali dello storico importato)
+      <input type="number" id="impOreGiornata" min="1" max="24" step="0.5" value="${og}">
+    </label>
   </section>`;
 }
 
@@ -1271,6 +1313,11 @@ document.addEventListener('click', e => {
       case 'export': esportaExcel(); break;
       case 'share': condividiExcel(); break;
       case 'backup': esportaBackup(); break;
+      case 'giornata': apriGiornata(act.dataset.data); break;
+      case 'report-genera':
+        generaReportMensile().catch(err => alert('Report non creato: ' + err.message));
+        break;
+      case 'report-importa': $('#fileReport').click(); break;
       case 'chiudi-avviso': avvisoTimer = ''; render(); break;
       case 'revit-associa': {
         const c = commessa($('#revitAssocia').value);
@@ -1327,6 +1374,10 @@ document.addEventListener('change', e => {
     salva();
     render();
     interrogaPonte();
+  } else if (t.id === 'impOreGiornata') {
+    state.impostazioni.oreGiornata = Number(t.value) || 8;
+    salva();
+    toast('Impostazione salvata');
   } else if (t.id === 'impInattivita') {
     state.impostazioni.inattivitaMin = Number(t.value);
     salva();

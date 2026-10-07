@@ -1,11 +1,13 @@
 // Service worker: rende l'app utilizzabile offline.
 // Aumenta VERSIONE ad ogni rilascio per aggiornare la cache.
-const VERSIONE = 'ore-commesse-v4';
+const VERSIONE = 'ore-commesse-v5';
 const FILE = [
   './',
   'index.html',
   'styles.css',
   'app.js',
+  'report.js',
+  'vendor/exceljs.min.js',
   'sync.js',
   'firebase-config.js',
   'vendor/firebase.js',

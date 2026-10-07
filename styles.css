@@ -241,3 +241,8 @@ dialog h2 { margin: 0 0 12px; font-size: 1.1rem; }
   z-index: 100;
   max-width: calc(100vw - 32px);
 }
+
+.day-head span.segni { font-weight: 400; text-transform: none; }
+.attivita-giorno { margin: 0 4px 4px; }
+button.mini { padding: 2px 8px; font-size: .9rem; margin-left: 6px; }
+button.mini-testo { border: 0; background: none; color: var(--primary); padding: 0 0 10px; font-size: .85rem; }

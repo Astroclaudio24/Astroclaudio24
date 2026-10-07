@@ -13,6 +13,10 @@ App per tenere traccia delle ore lavorate sulle commesse, utilizzabile su **Wind
   come ora di fine viene proposta quella del promemoria, così non conti ore non lavorate.
 - **Revit automatico** (PC Windows): con il *ponte Revit* l'app vede quale modello è aperto in Revit e, quando
   cambi modello, salva le ore della commessa precedente e avvia il timer su quella associata.
+- **Report mensile** (Excel): foglio *COMMESSE* con tutte le commesse e un foglio per mese con solo le commesse svolte,
+  in percentuale della giornata (arrotondata al 10%, somma 100%), più trasferta, nota spese, vitto, totale e attività svolte.
+  Il vecchio report si importa una volta per portare nell'app tutto lo storico.
+- **Giornata** (📝): attività svolte, ferie, trasferta, nota spese e vitto di ogni giorno.
 - **Inserimento manuale**: data, ora inizio/fine, pausa (le ore si calcolano da sole) oppure ore dirette, note.
 - **Registro**: filtri per periodo (oggi, settimana, mese, mese scorso, anno, personalizzato) e per commessa,
   totali di ore e importo.
@@ -26,6 +30,26 @@ App per tenere traccia delle ore lavorate sulle commesse, utilizzabile su **Wind
 - **Backup/ripristino** in JSON (con opzione *unisci*).
 
 I dati sono sempre salvati anche sul dispositivo: l'app funziona pure senza account e senza connessione.
+
+## Report mensile
+
+*Dati → Report mensile → Genera report mensile* crea `…Report_mensile_AAAA.xlsx` ([`report.js`](report.js), con
+[ExcelJS](https://github.com/exceljs/exceljs)):
+
+- **COMMESSE**: codice, nome, cliente, stato, primo/ultimo giorno lavorato, giornate, ore, modelli Revit;
+- **un foglio per mese** («SETTEMBRE 2026»), dal primo mese con dati a quello corrente: data, giorno, una colonna `[%]`
+  per ogni commessa lavorata nel mese (in ordine di inizio), TRASFERTA, NOTA SPESE, VITTO, TOTALE, Attività svolte;
+  weekend in grigio, ferie in verde, trasferte in arancione, riga TOTALE con giornate per commessa e spese del mese.
+
+Percentuali: quota delle ore registrate nel giorno, arrotondata al 10% con somma 100% (metodo dei resti più grandi);
+per i giorni importati restano le percentuali originali (anche le mezze giornate). Le *Attività svolte* sono quelle
+scritte nella Giornata (📝) oppure, se mancano, le note delle registrazioni (escluse quelle automatiche di Revit).
+
+*Importa il vecchio report* legge un file con un foglio per mese (colonne commessa «CODICE - NOME [%]», NOTA SPESE,
+VITTO, TOTALE, Attività svolte; anche i formati del 2024 con `100` al posto di `100%`, «(TRASFERTA)», «FERIE», spese
+come «7,0 + 20,0»): crea le commesse (quelle non usate negli ultimi 3 mesi archiviate), le percentuali giornaliere
+(convertite in ore con *Ore di una giornata piena*, predefinito 8) e i dati di giornata. I giorni già registrati
+nell'app non vengono toccati; reimportare lo stesso file non crea doppioni.
 
 ## Revit automatico (Windows)
 
@@ -93,5 +117,7 @@ oppure avviare un piccolo server: `python -m http.server` e aprire `http://local
 | `sw.js`, `manifest.webmanifest`, `icons/` | Installazione e funzionamento offline |
 | `sync.js`, `firebase-config.js`, `firestore.rules` | Sincronizzazione tramite Firebase |
 | `ponte-revit/` | Ponte Revit per Windows (script PowerShell + installazione/disinstallazione) |
+| `report.js` | Report mensile: generazione, importazione dello storico, dati della giornata |
+| `vendor/exceljs.min.js` | [ExcelJS](https://github.com/exceljs/exceljs) 4.4.0 per il report formattato (licenza MIT) |
 | `vendor/xlsx.mini.min.js` | [SheetJS](https://sheetjs.com) 0.18.5 per creare i file Excel (licenza Apache 2.0) |
 | `vendor/firebase.js` | Firebase JS SDK 12.19.0 in un unico file (licenza Apache 2.0), rigenerabile con `tools/build-firebase.sh` |

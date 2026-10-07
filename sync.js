@@ -7,12 +7,13 @@
 // Struttura su Firestore:
 //   utenti/{uid}/commesse/{id}
 //   utenti/{uid}/registrazioni/{id}
+//   utenti/{uid}/giorni/{AAAA-MM-GG}
 //   utenti/{uid}/meta/stato        -> { timer, impostazioni }
 
 const cfg = window.FIREBASE_CONFIG;
 const App = window.OreApp;
 const BASE_KEY = 'oreCommesse.syncBase';
-const COLLEZIONI = ['commesse', 'registrazioni'];
+const COLLEZIONI = ['commesse', 'registrazioni', 'giorni'];
 
 let fb = null, auth = null, db = null, utente = null;
 let ascolti = [];
